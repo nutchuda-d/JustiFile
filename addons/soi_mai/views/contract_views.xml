@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_contract_list" model="ir.ui.view">
+        <field name="name">soi.mai.contract.list</field>
+        <field name="model">soi.mai.contract</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="contract_date"/>
+                <field name="name"/>
+                <field name="agency_name"/>
+                <field name="vendor_name"/>
+                <field name="method_name" optional="show"/>
+                <field name="amount" sum="Total"/>
+                <field name="near_threshold" optional="hide"/>
+                <field name="group_id" optional="show"/>
+                <field name="source" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_contract_form" model="ir.ui.view">
+        <field name="name">soi.mai.contract.form</field>
+        <field name="model">soi.mai.contract</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Agency">
+                            <field name="agency_name"/>
+                            <field name="agency_sub_name"/>
+                            <field name="agency_code"/>
+                            <field name="province"/>
+                        </group>
+                        <group string="Contractor">
+                            <field name="vendor_name"/>
+                            <field name="vendor_tin"/>
+                        </group>
+                        <group string="Contract">
+                            <field name="contract_no"/>
+                            <field name="contract_date"/>
+                            <field name="method_name"/>
+                            <field name="is_direct"/>
+                            <field name="amount"/>
+                            <field name="budget_amount"/>
+                            <field name="budget_year"/>
+                        </group>
+                        <group string="Documentation Check">
+                            <field name="near_threshold"/>
+                            <field name="group_id"/>
+                            <field name="source"/>
+                            <field name="cgd_project_id"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_contract_search" model="ir.ui.view">
+        <field name="name">soi.mai.contract.search</field>
+        <field name="model">soi.mai.contract</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="agency_name"/>
+                <field name="vendor_name"/>
+                <field name="vendor_tin"/>
+                <filter name="direct" string="Direct Method" domain="[('is_direct', '=', True)]"/>
+                <filter name="near" string="Close to Threshold" domain="[('near_threshold', '=', True)]"/>
+                <filter name="grouped" string="In a Related Group" domain="[('group_id', '!=', False)]"/>
+                <filter name="manual" string="Entered by Officer" domain="[('source', '=', 'manual')]"/>
+                <group>
+                    <filter name="by_agency" string="Agency" context="{'group_by': 'agency_name'}"/>
+                    <filter name="by_vendor" string="Contractor" context="{'group_by': 'vendor_name'}"/>
+                    <filter name="by_method" string="Method" context="{'group_by': 'method_name'}"/>
+                    <filter name="by_month" string="Month" context="{'group_by': 'contract_date:month'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_contract_graph" model="ir.ui.view">
+        <field name="name">soi.mai.contract.graph</field>
+        <field name="model">soi.mai.contract</field>
+        <field name="arch" type="xml">
+            <graph type="bar">
+                <field name="method_name"/>
+                <field name="amount" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="view_contract_pivot" model="ir.ui.view">
+        <field name="name">soi.mai.contract.pivot</field>
+        <field name="model">soi.mai.contract</field>
+        <field name="arch" type="xml">
+            <pivot>
+                <field name="agency_name" type="row"/>
+                <field name="method_name" type="col"/>
+                <field name="amount" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="action_contract" model="ir.actions.act_window">
+        <field name="name">Contracts</field>
+        <field name="res_model">soi.mai.contract</field>
+        <field name="view_mode">list,form,pivot,graph</field>
+    </record>
+
+    <record id="action_contract_analysis" model="ir.actions.act_window">
+        <field name="name">Procurement Method Mix</field>
+        <field name="res_model">soi.mai.contract</field>
+        <field name="view_mode">graph,pivot,list</field>
+    </record>
+</odoo>

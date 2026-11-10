@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_cgd_import_form" model="ir.ui.view">
+        <field name="name">soi.mai.cgd.import.form</field>
+        <field name="model">soi.mai.cgd.import</field>
+        <field name="arch" type="xml">
+            <form>
+                <group invisible="result_message">
+                    <group>
+                        <field name="budget_year"/>
+                        <field name="dept_code"/>
+                        <field name="keyword"/>
+                    </group>
+                    <group>
+                        <field name="budget_end"/>
+                        <field name="max_records"/>
+                        <field name="run_grouping"/>
+                    </group>
+                </group>
+                <field name="result_message" invisible="not result_message"/>
+                <footer>
+                    <button name="action_import" type="object" string="Import" class="btn-primary"
+                            invisible="result_message"/>
+                    <button special="cancel" string="Close"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_cgd_import" model="ir.actions.act_window">
+        <field name="name">Import from CGD Open Data</field>
+        <field name="res_model">soi.mai.cgd.import</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

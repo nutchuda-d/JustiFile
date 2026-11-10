@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+.idea/
+*.iml
+cgd_probe.txt
+cgd_sample.json

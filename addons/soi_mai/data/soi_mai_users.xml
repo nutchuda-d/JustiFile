@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Prototype accounts for the demo. Change or remove before any real use. -->
+<odoo noupdate="1">
+    <record id="user_officer" model="res.users">
+        <field name="name">Procurement Officer (Demo)</field>
+        <field name="login">officer</field>
+        <field name="password">officer</field>
+        <field name="group_ids" eval="[(4, ref('soi_mai.group_soi_mai_officer'))]"/>
+    </record>
+    <record id="user_auditor" model="res.users">
+        <field name="name">Internal Auditor (Demo)</field>
+        <field name="login">auditor</field>
+        <field name="password">auditor</field>
+        <field name="group_ids" eval="[(4, ref('soi_mai.group_soi_mai_auditor'))]"/>
+    </record>
+    <record id="user_executive" model="res.users">
+        <field name="name">Executive (Demo)</field>
+        <field name="login">executive</field>
+        <field name="password">executive</field>
+        <field name="group_ids" eval="[(4, ref('soi_mai.group_soi_mai_executive'))]"/>
+    </record>
+</odoo>

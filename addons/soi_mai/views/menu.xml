@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_root" name="Soi Mai" sequence="20"
+              groups="group_soi_mai_executive,group_soi_mai_officer,group_soi_mai_auditor,base.group_system"/>
+
+    <menuitem id="menu_groups" name="Related Contract Groups" parent="menu_root" action="action_group" sequence="10"/>
+    <menuitem id="menu_contracts" name="Contracts" parent="menu_root" action="action_contract" sequence="20"/>
+
+    <menuitem id="menu_management" name="Management View" parent="menu_root" sequence="30"/>
+    <menuitem id="menu_group_analysis" name="Documentation Status" parent="menu_management"
+              action="action_group_analysis" sequence="10"/>
+    <menuitem id="menu_group_reasons" name="Reasons Given" parent="menu_management"
+              action="action_group_reasons" sequence="20"/>
+    <menuitem id="menu_contract_analysis" name="Procurement Method Mix" parent="menu_management"
+              action="action_contract_analysis" sequence="30"/>
+
+    <menuitem id="menu_operations" name="Operations" parent="menu_root" sequence="40"
+              groups="group_soi_mai_auditor,base.group_system"/>
+    <menuitem id="menu_cgd_import" name="Import from CGD Open Data" parent="menu_operations"
+              action="action_cgd_import" sequence="10"/>
+    <menuitem id="menu_run_grouping" name="Check Related Contracts Now" parent="menu_operations"
+              action="action_server_run_grouping" sequence="20"/>
+</odoo>

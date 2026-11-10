@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_group_list" model="ir.ui.view">
+        <field name="name">soi.mai.contract.group.list</field>
+        <field name="model">soi.mai.contract.group</field>
+        <field name="arch" type="xml">
+            <list create="0">
+                <field name="name"/>
+                <field name="agency_name"/>
+                <field name="vendor_name"/>
+                <field name="contract_count"/>
+                <field name="total_amount" sum="Total"/>
+                <field name="date_from"/>
+                <field name="date_to"/>
+                <field name="doc_priority" widget="badge" decoration-warning="doc_priority == 'high'"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'requested'" decoration-warning="state == 'submitted'"
+                       decoration-success="state == 'documented'" decoration-danger="state == 'referred'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_group_form" model="ir.ui.view">
+        <field name="name">soi.mai.contract.group.form</field>
+        <field name="model">soi.mai.contract.group</field>
+        <field name="arch" type="xml">
+            <form create="0">
+                <header>
+                    <button name="action_submit_justification" type="object" string="Submit Justification"
+                            class="btn-primary" invisible="state not in ('requested', 'referred')"
+                            groups="soi_mai.group_soi_mai_officer,base.group_system"/>
+                    <button name="action_mark_documented" type="object" string="Mark as Documented"
+                            class="btn-primary" invisible="state != 'submitted'"
+                            groups="soi_mai.group_soi_mai_auditor,base.group_system"/>
+                    <button name="action_refer" type="object" string="Refer for Second Opinion"
+                            invisible="state != 'submitted'"
+                            groups="soi_mai.group_soi_mai_auditor,base.group_system"/>
+                    <field name="state" widget="statusbar" statusbar_visible="requested,submitted,documented"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Related Contracts">
+                            <field name="agency_name"/>
+                            <field name="vendor_name"/>
+                            <field name="vendor_tin"/>
+                            <field name="contract_count"/>
+                            <field name="total_amount"/>
+                            <field name="threshold"/>
+                            <field name="date_from"/>
+                            <field name="date_to"/>
+                            <field name="span_days"/>
+                        </group>
+                        <group string="Why a justification is requested">
+                            <field name="check_combined"/>
+                            <field name="check_near_threshold"/>
+                            <field name="check_similar_names"/>
+                            <field name="check_recurring"/>
+                            <field name="doc_priority" widget="badge" decoration-warning="doc_priority == 'high'"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Contracts" name="contracts">
+                            <field name="contract_ids" readonly="1">
+                                <list>
+                                    <field name="contract_date"/>
+                                    <field name="name"/>
+                                    <field name="contract_no"/>
+                                    <field name="method_name"/>
+                                    <field name="amount" sum="Combined"/>
+                                    <field name="near_threshold"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Justification" name="justification">
+                            <group>
+                                <field name="reason_category" readonly="state in ('submitted', 'documented')"/>
+                                <field name="justification" readonly="state in ('submitted', 'documented')"
+                                       placeholder="Explain why these contracts were procured separately. Attach supporting documents in the chatter."/>
+                                <field name="justified_by"/>
+                                <field name="justified_date"/>
+                            </group>
+                        </page>
+                        <page string="Review" name="review">
+                            <group>
+                                <field name="review_note" groups="soi_mai.group_soi_mai_auditor,base.group_system"/>
+                                <field name="reviewer_id"/>
+                                <field name="review_date"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_group_kanban" model="ir.ui.view">
+        <field name="name">soi.mai.contract.group.kanban</field>
+        <field name="model">soi.mai.contract.group</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state" create="0" group_create="0" group_delete="0" records_draggable="0">
+                <field name="doc_priority"/>
+                <templates>
+                    <t t-name="card">
+                        <div class="d-flex justify-content-between">
+                            <field name="name" class="fw-bold"/>
+                            <field name="doc_priority" widget="badge" invisible="doc_priority != 'high'"
+                                   decoration-warning="doc_priority == 'high'"/>
+                        </div>
+                        <field name="agency_name"/>
+                        <field name="vendor_name" class="text-muted"/>
+                        <div>
+                            <field name="contract_count"/> contracts ·
+                            <field name="total_amount"/> THB
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="view_group_search" model="ir.ui.view">
+        <field name="name">soi.mai.contract.group.search</field>
+        <field name="model">soi.mai.contract.group</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="agency_name"/>
+                <field name="vendor_name"/>
+                <filter name="waiting" string="Waiting for Justification" domain="[('state', '=', 'requested')]"/>
+                <filter name="to_review" string="To Review" domain="[('state', '=', 'submitted')]"/>
+                <filter name="high" string="High Priority" domain="[('doc_priority', '=', 'high')]"/>
+                <group>
+                    <filter name="by_state" string="Status" context="{'group_by': 'state'}"/>
+                    <filter name="by_agency" string="Agency" context="{'group_by': 'agency_name'}"/>
+                    <filter name="by_reason" string="Reason" context="{'group_by': 'reason_category'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_group_graph" model="ir.ui.view">
+        <field name="name">soi.mai.contract.group.graph</field>
+        <field name="model">soi.mai.contract.group</field>
+        <field name="arch" type="xml">
+            <graph type="bar" stacked="1">
+                <field name="agency_name"/>
+                <field name="state"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="view_group_pivot" model="ir.ui.view">
+        <field name="name">soi.mai.contract.group.pivot</field>
+        <field name="model">soi.mai.contract.group</field>
+        <field name="arch" type="xml">
+            <pivot>
+                <field name="agency_name" type="row"/>
+                <field name="state" type="col"/>
+                <field name="is_documented" type="measure"/>
+                <field name="days_to_submit" type="measure"/>
+                <field name="total_amount" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="action_group" model="ir.actions.act_window">
+        <field name="name">Related Contract Groups</field>
+        <field name="res_model">soi.mai.contract.group</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No related contracts need a justification</p>
+            <p>Groups appear here when several direct-method contracts with the same contractor,
+               close together in time, add up to more than the bidding threshold.</p>
+        </field>
+    </record>
+
+    <record id="action_group_analysis" model="ir.actions.act_window">
+        <field name="name">Documentation Status</field>
+        <field name="res_model">soi.mai.contract.group</field>
+        <field name="view_mode">graph,pivot</field>
+    </record>
+
+    <record id="action_group_reasons" model="ir.actions.act_window">
+        <field name="name">Reasons Given</field>
+        <field name="res_model">soi.mai.contract.group</field>
+        <field name="view_mode">graph,pivot</field>
+        <field name="domain">[('reason_category', '!=', False)]</field>
+        <field name="context">{'graph_groupbys': ['reason_category'], 'graph_mode': 'pie', 'pivot_row_groupby': ['reason_category']}</field>
+    </record>
+
+    <record id="action_server_run_grouping" model="ir.actions.server">
+        <field name="name">Check Related Contracts Now</field>
+        <field name="model_id" ref="model_soi_mai_contract_group"/>
+        <field name="state">code</field>
+        <field name="code">action = model.action_run_grouping()</field>
+    </record>
+</odoo>

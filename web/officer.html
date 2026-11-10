@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Soi Mai - Procurement Officer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Soi Mai · Procurement Officer</h1>
+  <nav>
+    <span id="who" class="muted" style="color:#cfe0f5"></span>
+    <a href="index.html">Public view</a>
+    <a href="#" id="logout" class="hidden">Sign out</a>
+  </nav>
+</header>
+<main>
+  <div id="msg" class="notice hidden"></div>
+
+  <!-- Sign in with the Odoo account -->
+  <section id="login-box" class="hidden">
+    <h2>Sign in</h2>
+    <form id="login" class="grid2">
+      <label>Username <input id="login-user" autocomplete="username" required></label>
+      <label>Password <input id="login-pass" type="password" autocomplete="current-password" required></label>
+      <div><button type="submit">Sign in</button></div>
+    </form>
+  </section>
+
+  <div id="app" class="hidden">
+    <section>
+      <h2>1. Record a new contract</h2>
+      <form id="contract">
+        <div class="grid2">
+          <label>Project name <input id="f-name" required></label>
+          <label>Agency <input id="f-agency" required></label>
+          <label>Contractor name <input id="f-vendor" required></label>
+          <label>Contractor tax ID <input id="f-tin" required inputmode="numeric"></label>
+          <label>Procurement method
+            <select id="f-method">
+              <option>เฉพาะเจาะจง</option>
+              <option>คัดเลือก</option>
+              <option>ประกวดราคาอิเล็กทรอนิกส์ (e-bidding)</option>
+            </select>
+          </label>
+          <label>Contract no. <input id="f-no"></label>
+          <label>Contract amount (THB) <input id="f-amount" type="number" min="1" step="0.01" required></label>
+          <label>Contract date <input id="f-date" type="date" required></label>
+        </div>
+        <div id="precheck" class="notice hidden"></div>
+        <button type="button" class="secondary" id="btn-check">Check related contracts</button>
+        <button type="submit">Save contract</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>2. Justification requests</h2>
+      <p class="muted">Groups of related contracts whose combined amount is above the bidding threshold.
+        Record the reason so the file is ready for audit.</p>
+      <div id="groups"></div>
+    </section>
+
+    <section>
+      <h2>3. Contracts recorded here</h2>
+      <div class="scroll" id="mine"></div>
+    </section>
+  </div>
+</main>
+<script src="app.js"></script>
+<script>
+let config = {};
+let reasons = [];
+
+function say(text, kind) {
+  const box = $("msg");
+  box.textContent = text;
+  box.className = "notice " + (kind || "info");
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function fail(e) {
+  if (e.status === 401) return showLogin();
+  say(e.message, "err");
+}
+
+function showLogin() {
+  $("app").classList.add("hidden");
+  $("logout").classList.add("hidden");
+  $("login-box").classList.remove("hidden");
+  $("who").textContent = "";
+}
+
+async function start() {
+  config = await api("/public/config");
+  if (!config.signed_in) return showLogin();
+  if (!config.is_officer) {
+    showLogin();
+    return say("This account is not a procurement officer. Auditors and executives work in Odoo.", "warn");
+  }
+  $("login-box").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  $("logout").classList.remove("hidden");
+  $("who").textContent = config.user;
+  reasons = (await api("/officer/reasons")).items;
+  await Promise.all([loadGroups(), loadMine()]);
+}
+
+function formData() {
+  return {
+    name: $("f-name").value, agency_name: $("f-agency").value,
+    vendor_name: $("f-vendor").value, vendor_tin: $("f-tin").value,
+    method_name: $("f-method").value, contract_no: $("f-no").value,
+    amount: $("f-amount").value, contract_date: $("f-date").value,
+  };
+}
+
+async function precheck() {
+  const r = await api("/officer/precheck", { body: formData() });
+  const box = $("precheck");
+  box.replaceChildren();
+  if (r.needs_justification) {
+    box.className = "notice warn";
+    box.appendChild(el("strong", "A justification will be requested. "));
+    box.appendChild(el("span",
+      `Together with ${r.related.length} related contract(s) within ${r.window_days} days, the combined amount is ` +
+      `${money(r.combined_amount)} THB (threshold ${money(r.threshold)} THB). You can still save; ` +
+      `please be ready to record the reason.`));
+    box.appendChild(contractsTable(r.related));
+  } else {
+    box.className = "notice ok";
+    box.textContent = "No related contracts need a justification for this entry.";
+  }
+  return r;
+}
+
+function groupCard(g) {
+  const card = el("div", null, "card");
+  const title = el("h2", `${g.ref} · ${g.contractor} `);
+  title.appendChild(el("span", g.state_label, "badge " + g.state));
+  card.appendChild(title);
+  card.appendChild(el("p",
+    `${g.agency} — ${g.contract_count} contracts, ${money(g.total_amount)} THB combined ` +
+    `(${g.date_from} to ${g.date_to}); threshold ${money(g.threshold)} THB`));
+  card.appendChild(el("p", "Why this is requested: " + g.checks.join("; "), "muted"));
+  const wrap = el("div", null, "scroll");
+  wrap.appendChild(contractsTable(g.contracts));
+  card.appendChild(wrap);
+
+  if (g.state === "requested" || g.state === "referred") {
+    if (g.review_note) card.appendChild(el("div", "Reviewer note: " + g.review_note, "notice info"));
+    const form = document.createElement("form");
+    const select = document.createElement("select");
+    reasons.forEach((r) => { const o = el("option", r.label); o.value = r.value; select.appendChild(o); });
+    if (g.reason_category) select.value = g.reason_category;
+    const text = document.createElement("textarea");
+    text.rows = 3; text.required = true; text.value = g.justification;
+    text.placeholder = "Explain why these contracts were procured separately.";
+    const l1 = el("label", "Reason "); l1.appendChild(select);
+    const l2 = el("label", "Justification "); l2.appendChild(text);
+    form.append(l1, l2, el("button", "Submit justification"));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        await api(`/officer/groups/${g.id}/justify`, { body: { reason_category: select.value, justification: text.value } });
+        say(`${g.ref}: justification submitted for review.`, "ok");
+        await loadGroups();
+      } catch (err) { fail(err); }
+    });
+    card.appendChild(form);
+  } else {
+    card.appendChild(el("p", "Reason given: " + g.justification, "muted"));
+  }
+  return card;
+}
+
+async function loadGroups() {
+  const data = await api("/officer/groups");
+  const box = $("groups");
+  box.replaceChildren();
+  if (!data.items.length) box.appendChild(el("p", "Nothing is waiting for a justification.", "muted"));
+  data.items.forEach((g) => box.appendChild(groupCard(g)));
+}
+
+async function loadMine() {
+  const data = await api("/officer/contracts");
+  $("mine").replaceChildren(contractsTable(data.items));
+}
+
+$("login").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await odooLogin(config.db, $("login-user").value, $("login-pass").value);
+    $("msg").classList.add("hidden");
+    await start();
+  } catch (err) { say(err.message, "err"); }
+});
+$("logout").addEventListener("click", async (e) => { e.preventDefault(); await odooLogout(); showLogin(); });
+$("btn-check").addEventListener("click", () => {
+  if ($("contract").reportValidity()) precheck().catch(fail);
+});
+$("contract").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const r = await api("/officer/contracts", { body: formData() });
+    say(r.group
+      ? `Saved. This contract is part of ${r.group.ref}; a justification is requested below.`
+      : "Saved. No justification is needed.", r.group ? "warn" : "ok");
+    $("contract").reset();
+    $("precheck").classList.add("hidden");
+    await Promise.all([loadGroups(), loadMine()]);
+  } catch (err) { fail(err); }
+});
+start().catch(fail);
+</script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Soi Mai - Open Procurement</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Soi Mai · Open Procurement</h1>
+  <nav><a href="index.html">Public view</a><a href="officer.html">Officer page</a></nav>
+</header>
+<main>
+  <div id="error" class="notice err hidden"></div>
+
+  <div class="cards">
+    <div class="card"><div class="num" id="k-count">-</div><div class="lbl">Contracts</div></div>
+    <div class="card"><div class="num" id="k-amount">-</div><div class="lbl">Total contract value (THB)</div></div>
+    <div class="card"><div class="num" id="k-agency">-</div><div class="lbl">Agencies</div></div>
+  </div>
+
+  <section>
+    <h2>By procurement method</h2>
+    <div class="scroll"><table id="t-method"></table></div>
+  </section>
+
+  <section>
+    <h2>By month</h2>
+    <div class="scroll"><table id="t-month"></table></div>
+  </section>
+
+  <section>
+    <h2>Contracts</h2>
+    <form id="search" class="grid2">
+      <label>Search project, agency or contractor <input id="q" type="search"></label>
+      <div><button type="submit">Search</button></div>
+    </form>
+    <p class="muted" id="c-total"></p>
+    <div class="scroll" id="c-list"></div>
+    <p><button class="secondary" id="prev">Previous</button> <button class="secondary" id="next">Next</button></p>
+    <p class="muted">Source: Comptroller General's Department open data (govspending.data.go.th) and entries by municipal officers.</p>
+  </section>
+</main>
+<script src="app.js"></script>
+<script>
+const PAGE = 20;
+let offset = 0;
+
+function showError(e) { $("error").textContent = e.message; $("error").classList.remove("hidden"); }
+
+function breakdown(tableId, label, rows, key) {
+  const table = $(tableId);
+  table.replaceChildren();
+  const head = document.createElement("tr");
+  head.appendChild(el("th", label));
+  head.appendChild(el("th", "Contracts", "num"));
+  head.appendChild(el("th", "Value (THB)", "num"));
+  head.appendChild(el("th", ""));
+  table.appendChild(head);
+  const max = Math.max(1, ...rows.map((r) => r.amount));
+  rows.forEach((r) => {
+    const bar = el("div", null, "bar");
+    bar.style.width = Math.round((r.amount / max) * 160) + "px";
+    table.appendChild(row([r[key], { num: true, text: r.count }, num(r.amount), bar]));
+  });
+}
+
+async function loadSummary() {
+  const s = await api("/public/summary");
+  $("k-count").textContent = s.contract_count.toLocaleString("en-US");
+  $("k-amount").textContent = money(s.total_amount);
+  $("k-agency").textContent = s.agency_count;
+  breakdown("t-method", "Method", s.by_method, "method");
+  breakdown("t-month", "Month", s.by_month, "month");
+}
+
+async function loadContracts() {
+  const q = encodeURIComponent($("q").value.trim());
+  const data = await api(`/public/contracts?q=${q}&limit=${PAGE}&offset=${offset}`);
+  $("c-total").textContent = data.total
+    ? `Showing ${offset + 1}-${offset + data.items.length} of ${data.total}` : "No contracts found.";
+  $("c-list").replaceChildren(contractsTable(data.items.map((c) => ({ ...c, name: c.name + " — " + c.agency }))));
+  $("prev").disabled = offset === 0;
+  $("next").disabled = offset + PAGE >= data.total;
+}
+
+$("search").addEventListener("submit", (e) => { e.preventDefault(); offset = 0; loadContracts().catch(showError); });
+$("prev").addEventListener("click", () => { offset = Math.max(0, offset - PAGE); loadContracts().catch(showError); });
+$("next").addEventListener("click", () => { offset += PAGE; loadContracts().catch(showError); });
+loadSummary().catch(showError);
+loadContracts().catch(showError);
+</script>
+</body>
+</html>
