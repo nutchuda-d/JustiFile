@@ -48,41 +48,68 @@ class SoiMaiApi(http.Controller):
             "is_officer": signed_in and (user.has_group(OFFICER) or user.has_group("base.group_system")),
         })
 
-    @http.route("/api/soi_mai/public/summary", type="http", auth="public", methods=["GET"], csrf=False)
-    def public_summary(self):
+    def _public_filters(self, kw):
+        try:
+            return request.env["soi.mai.contract"]._public_domain(
+                q=(kw.get("q") or "").strip(), agency=kw.get("agency"), province=kw.get("province"),
+                method=kw.get("method"), year=kw.get("year"),
+            )
+        except ValueError as exc:
+            raise ValidationError("year must be a number") from exc
+
+    @http.route("/api/soi_mai/public/filters", type="http", auth="public", methods=["GET"], csrf=False)
+    def public_filter_options(self):
+        """Values for the filter boxes on the public page."""
         Contract = request.env["soi.mai.contract"].sudo()
-        by_method = Contract._read_group([], ["method_name"], ["__count", "amount:sum"])
-        by_month = Contract._read_group(
-            [("contract_date", "!=", False)], ["contract_date:month"], ["__count", "amount:sum"],
-        )
-        by_agency = Contract._read_group([], ["agency_name"], ["__count", "amount:sum"])
-        total = sum(row[1] for row in by_method)
+
+        def values(field, limit=None):
+            rows = Contract._read_group([(field, "!=", False)], [field], ["__count"])
+            rows = sorted(rows, key=lambda r: -r[1])[:limit] if limit else rows
+            return sorted(str(r[0]) for r in rows)
+
         return _json({
-            "contract_count": total,
-            "total_amount": sum(row[2] for row in by_method),
+            "agencies": values("agency_name", limit=300),
+            "provinces": values("province"),
+            "methods": values("method_name"),
+            "years": sorted({int(y) for y in values("budget_year") if y != "0"}, reverse=True),
+        })
+
+    @http.route("/api/soi_mai/public/summary", type="http", auth="public", methods=["GET"], csrf=False)
+    def public_summary(self, **kw):
+        Contract = request.env["soi.mai.contract"].sudo()
+        try:
+            domain = self._public_filters(kw)
+        except ValidationError as exc:
+            return _error(str(exc))
+        by_method = Contract._read_group(domain, ["method_name"], ["__count", "amount:sum"])
+        by_month = Contract._read_group(
+            domain + [("contract_date", "!=", False)], ["contract_date:month"], ["__count", "amount:sum"],
+        )
+        by_agency = Contract._read_group(domain, ["agency_name"], ["__count", "amount:sum"])
+        return _json({
+            "contract_count": sum(row[1] for row in by_method),
+            "total_amount": sum(row[2] or 0 for row in by_method),
             "agency_count": len(by_agency),
             "by_method": sorted(
-                [{"method": m or "Not specified", "count": c, "amount": a} for m, c, a in by_method],
+                [{"method": m or "Not specified", "count": c, "amount": a or 0} for m, c, a in by_method],
                 key=lambda r: -r["count"],
             ),
             "by_month": [
-                {"month": fields.Date.to_string(m)[:7], "count": c, "amount": a} for m, c, a in by_month if m
+                {"month": fields.Date.to_string(m)[:7], "count": c, "amount": a or 0} for m, c, a in by_month if m
             ],
             "by_agency": sorted(
-                [{"agency": g, "count": c, "amount": a} for g, c, a in by_agency], key=lambda r: -r["amount"],
+                [{"agency": g, "count": c, "amount": a or 0} for g, c, a in by_agency], key=lambda r: -r["amount"],
             )[:10],
         })
 
     @http.route("/api/soi_mai/public/contracts", type="http", auth="public", methods=["GET"], csrf=False)
-    def public_contracts(self, q=None, limit=20, offset=0, **kw):
+    def public_contracts(self, limit=20, offset=0, **kw):
         Contract = request.env["soi.mai.contract"].sudo()
-        domain = []
-        if q:
-            domain = ["|", "|", ("name", "ilike", q), ("agency_name", "ilike", q), ("vendor_name", "ilike", q)]
         try:
+            domain = self._public_filters(kw)
             limit, offset = max(1, min(int(limit), 100)), max(0, int(offset))
-        except ValueError:
-            return _error("limit and offset must be numbers")
+        except (ValidationError, ValueError):
+            return _error("limit, offset and year must be numbers")
         records = Contract.search(domain, limit=limit, offset=offset)
         return _json({
             "total": Contract.search_count(domain),
@@ -122,6 +149,40 @@ class SoiMaiApi(http.Controller):
             "budget_year": contract_date.year + 543 + (1 if contract_date.month >= 10 else 0),
             "source": "manual",
         }
+
+    @http.route("/api/soi_mai/officer/vendor", type="http", auth="public", methods=["GET"], csrf=False)
+    def officer_vendor(self, tin=None, agency=None, **kw):
+        """Name and past contracts for a contractor tax ID (plain facts, no rating)."""
+        denied = _officer_guard()
+        if denied:
+            return denied
+        tin = (tin or "").strip()
+        if not tin:
+            return _error("tin is required")
+        Contract = request.env["soi.mai.contract"].sudo()
+        latest = Contract.search([("vendor_tin", "=", tin), ("vendor_name", "!=", False)], limit=1)
+
+        def totals(domain):
+            count, amount, last = Contract._read_group(domain, [], ["__count", "amount:sum", "contract_date:max"])[0]
+            return {"count": count, "amount": amount or 0, "last_date": fields.Date.to_string(last) if last else None}
+
+        result = {"tin": tin, "name": latest.vendor_name or "", "all": totals([("vendor_tin", "=", tin)])}
+        if agency:
+            result["with_agency"] = totals([("vendor_tin", "=", tin), ("agency_name", "=", agency.strip())])
+        return _json(result)
+
+    @http.route("/api/soi_mai/officer/attachments/<int:attachment_id>", type="http", auth="public",
+                methods=["GET"], csrf=False)
+    def officer_attachment(self, attachment_id):
+        denied = _officer_guard()
+        if denied:
+            return denied
+        attachment = request.env["ir.attachment"].sudo().search([
+            ("id", "=", attachment_id), ("res_model", "=", "soi.mai.contract.group"),
+        ], limit=1)
+        if not attachment:
+            return _error("File not found", 404)
+        return request.env["ir.binary"]._get_stream_from(attachment, "raw").get_response(as_attachment=True)
 
     @http.route("/api/soi_mai/officer/precheck", type="http", auth="public", methods=["POST"], csrf=False)
     def officer_precheck(self):
@@ -176,10 +237,14 @@ class SoiMaiApi(http.Controller):
             reasons = dict(group._fields["reason_category"].selection)
             if data.get("reason_category") not in reasons:
                 raise ValidationError("reason_category must be one of: %s" % ", ".join(reasons))
+            if not str(data.get("justification") or "").strip():
+                raise ValidationError("Please write the justification first.")
             group.write({
                 "reason_category": data["reason_category"],
-                "justification": str(data.get("justification") or "").strip(),
+                "justification": str(data["justification"]).strip(),
             })
+            if data.get("attachments"):
+                group.add_evidence(data["attachments"])
             group.action_submit_justification()
         except (ValidationError, UserError, AccessError) as exc:
             request.env.cr.rollback()

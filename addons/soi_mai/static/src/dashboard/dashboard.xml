@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="soi_mai.Dashboard">
+        <div class="o_action soi_mai_dashboard h-100 overflow-auto bg-view">
+            <div class="container-fluid p-4" t-if="state.data">
+                <t t-set="k" t-value="state.data.kpis"/>
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <h2 class="mb-0">Management Dashboard</h2>
+                    <button class="btn btn-secondary" t-on-click="load">Refresh</button>
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-12 col-sm-6 col-xl">
+                        <div class="soi_mai_kpi card h-100" t-on-click="() => this.openGroups([['state', '=', 'documented']], 'Documented')">
+                            <div class="card-body">
+                                <div class="soi_mai_kpi_value" t-esc="show(k.completeness_rate, '%')"/>
+                                <div class="fw-bold">Documentation completeness</div>
+                                <div class="text-muted small"><t t-esc="k.documented"/> of <t t-esc="k.total_groups"/> groups documented</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-xl">
+                        <div class="soi_mai_kpi card h-100" t-on-click="() => this.openGroups([['state', 'in', ['requested', 'referred']]], 'Waiting for Justification')">
+                            <div class="card-body">
+                                <div class="soi_mai_kpi_value" t-esc="k.waiting"/>
+                                <div class="fw-bold">Waiting for justification</div>
+                                <div class="text-muted small"><t t-esc="k.high_priority_open"/> high priority · <t t-esc="k.to_review"/> to review</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-xl">
+                        <div class="soi_mai_kpi card h-100" t-on-click="() => this.openGroups([['justified_date', '!=', false]], 'Justifications Submitted')">
+                            <div class="card-body">
+                                <div class="soi_mai_kpi_value" t-esc="show(k.avg_days_to_submit)"/>
+                                <div class="fw-bold">Avg. days to submit</div>
+                                <div class="text-muted small">from request to officer's justification</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-xl">
+                        <div class="soi_mai_kpi card h-100" t-on-click="() => this.openContracts([['is_direct', '=', true]], 'Direct-Method Contracts')">
+                            <div class="card-body">
+                                <div class="soi_mai_kpi_value" t-esc="show(k.direct_share, '%')"/>
+                                <div class="fw-bold">Direct-method share</div>
+                                <div class="text-muted small"><t t-esc="k.direct_count"/> of <t t-esc="k.total_contracts"/> contracts · <t t-esc="money(k.direct_amount)"/> THB</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-xl">
+                        <div class="soi_mai_kpi card h-100" t-on-click="() => this.openContracts([['near_threshold', '=', true], ['is_direct', '=', true]], 'Contracts Close to Threshold')">
+                            <div class="card-body">
+                                <div class="soi_mai_kpi_value" t-esc="k.near_threshold"/>
+                                <div class="fw-bold">Close to threshold</div>
+                                <div class="text-muted small">direct contracts just below the <t t-esc="money(state.data.params.threshold)"/> THB threshold</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-12 col-lg-4">
+                        <div class="card h-100"><div class="card-body">
+                            <h5>Status of related-contract groups</h5>
+                            <div t-foreach="state.data.by_state" t-as="row" t-key="row.key" class="soi_mai_row"
+                                 t-on-click="() => this.openGroups([['state', '=', row.key]], row.label)">
+                                <div class="d-flex justify-content-between"><span t-esc="row.label"/><b t-esc="row.count"/></div>
+                                <div class="soi_mai_bar"><div t-att-style="width(row.count, state.data.by_state)"/></div>
+                            </div>
+                        </div></div>
+                    </div>
+                    <div class="col-12 col-lg-4">
+                        <div class="card h-100"><div class="card-body">
+                            <h5>Reasons given</h5>
+                            <p t-if="!state.data.by_reason.length" class="text-muted">No justification submitted yet.</p>
+                            <div t-foreach="state.data.by_reason" t-as="row" t-key="row.key" class="soi_mai_row"
+                                 t-on-click="() => this.openGroups([['reason_category', '=', row.key]], row.label)">
+                                <div class="d-flex justify-content-between"><span t-esc="row.label"/><b t-esc="row.count"/></div>
+                                <div class="soi_mai_bar"><div t-att-style="width(row.count, state.data.by_reason)"/></div>
+                            </div>
+                        </div></div>
+                    </div>
+                    <div class="col-12 col-lg-4">
+                        <div class="card h-100"><div class="card-body">
+                            <h5>Agencies with open requests</h5>
+                            <p t-if="!state.data.open_by_agency.length" class="text-muted">Nothing is waiting for a justification.</p>
+                            <div t-foreach="state.data.open_by_agency" t-as="row" t-key="row.agency" class="soi_mai_row"
+                                 t-on-click="() => this.openGroups([['state', 'in', ['requested', 'referred']], ['agency_name', '=', row.agency]], row.agency)">
+                                <div class="d-flex justify-content-between"><span t-esc="row.agency"/><b t-esc="row.count"/></div>
+                                <div class="text-muted small"><t t-esc="money(row.amount)"/> THB combined</div>
+                                <div class="soi_mai_bar"><div t-att-style="width(row.count, state.data.open_by_agency)"/></div>
+                            </div>
+                        </div></div>
+                    </div>
+                </div>
+                <p class="text-muted small mt-3">
+                    A group asks for a justification when direct-method contracts of one agency with the same contractor,
+                    within <t t-esc="state.data.params.window_days"/> days, add up to more than
+                    <t t-esc="money(state.data.params.threshold)"/> THB. It points at records to document, not at wrongdoing.
+                </p>
+            </div>
+        </div>
+    </t>
+</templates>

@@ -7,6 +7,8 @@
     <menuitem id="menu_contracts" name="Contracts" parent="menu_root" action="action_contract" sequence="20"/>
 
     <menuitem id="menu_management" name="Management View" parent="menu_root" sequence="30"/>
+    <menuitem id="menu_dashboard" name="Dashboard" parent="menu_management"
+              action="action_dashboard" sequence="5"/>
     <menuitem id="menu_group_analysis" name="Documentation Status" parent="menu_management"
               action="action_group_analysis" sequence="10"/>
     <menuitem id="menu_group_reasons" name="Reasons Given" parent="menu_management"

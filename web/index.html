@@ -14,6 +14,21 @@
 <main>
   <div id="error" class="notice err hidden"></div>
 
+  <section>
+    <h2>Filter</h2>
+    <form id="search">
+      <div class="grid2">
+        <label>Search project, agency or contractor <input id="q" type="search"></label>
+        <label>Agency <input id="f-agency" list="agency-list" placeholder="All agencies"><datalist id="agency-list"></datalist></label>
+        <label>Province <select id="f-province"><option value="">All provinces</option></select></label>
+        <label>Procurement method <select id="f-method"><option value="">All methods</option></select></label>
+        <label>Budget year (B.E.) <select id="f-year"><option value="">All years</option></select></label>
+      </div>
+      <button type="submit">Apply</button>
+      <button type="button" class="secondary" id="clear">Clear</button>
+    </form>
+  </section>
+
   <div class="cards">
     <div class="card"><div class="num" id="k-count">-</div><div class="lbl">Contracts</div></div>
     <div class="card"><div class="num" id="k-amount">-</div><div class="lbl">Total contract value (THB)</div></div>
@@ -32,10 +47,6 @@
 
   <section>
     <h2>Contracts</h2>
-    <form id="search" class="grid2">
-      <label>Search project, agency or contractor <input id="q" type="search"></label>
-      <div><button type="submit">Search</button></div>
-    </form>
     <p class="muted" id="c-total"></p>
     <div class="scroll" id="c-list"></div>
     <p><button class="secondary" id="prev">Previous</button> <button class="secondary" id="next">Next</button></p>
@@ -66,8 +77,28 @@ function breakdown(tableId, label, rows, key) {
   });
 }
 
+function filterQuery() {
+  const params = new URLSearchParams();
+  const values = { q: $("q").value.trim(), agency: $("f-agency").value.trim(), province: $("f-province").value,
+                   method: $("f-method").value, year: $("f-year").value };
+  Object.entries(values).forEach(([key, value]) => { if (value) params.set(key, value); });
+  return params;
+}
+
+function fillSelect(id, values) {
+  values.forEach((value) => { const o = el("option", String(value)); o.value = value; $(id).appendChild(o); });
+}
+
+async function loadFilters() {
+  const f = await api("/public/filters");
+  f.agencies.forEach((name) => { const o = document.createElement("option"); o.value = name; $("agency-list").appendChild(o); });
+  fillSelect("f-province", f.provinces);
+  fillSelect("f-method", f.methods);
+  fillSelect("f-year", f.years);
+}
+
 async function loadSummary() {
-  const s = await api("/public/summary");
+  const s = await api("/public/summary?" + filterQuery());
   $("k-count").textContent = s.contract_count.toLocaleString("en-US");
   $("k-amount").textContent = money(s.total_amount);
   $("k-agency").textContent = s.agency_count;
@@ -76,8 +107,10 @@ async function loadSummary() {
 }
 
 async function loadContracts() {
-  const q = encodeURIComponent($("q").value.trim());
-  const data = await api(`/public/contracts?q=${q}&limit=${PAGE}&offset=${offset}`);
+  const params = filterQuery();
+  params.set("limit", PAGE);
+  params.set("offset", offset);
+  const data = await api("/public/contracts?" + params);
   $("c-total").textContent = data.total
     ? `Showing ${offset + 1}-${offset + data.items.length} of ${data.total}` : "No contracts found.";
   $("c-list").replaceChildren(contractsTable(data.items.map((c) => ({ ...c, name: c.name + " — " + c.agency }))));
@@ -85,11 +118,19 @@ async function loadContracts() {
   $("next").disabled = offset + PAGE >= data.total;
 }
 
-$("search").addEventListener("submit", (e) => { e.preventDefault(); offset = 0; loadContracts().catch(showError); });
+function reload() {
+  offset = 0;
+  $("error").classList.add("hidden");
+  loadSummary().catch(showError);
+  loadContracts().catch(showError);
+}
+
+$("search").addEventListener("submit", (e) => { e.preventDefault(); reload(); });
+$("clear").addEventListener("click", () => { $("search").reset(); reload(); });
 $("prev").addEventListener("click", () => { offset = Math.max(0, offset - PAGE); loadContracts().catch(showError); });
 $("next").addEventListener("click", () => { offset += PAGE; loadContracts().catch(showError); });
-loadSummary().catch(showError);
-loadContracts().catch(showError);
+loadFilters().catch(showError);
+reload();
 </script>
 </body>
 </html>

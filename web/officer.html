@@ -48,6 +48,7 @@
           <label>Contract amount (THB) <input id="f-amount" type="number" min="1" step="0.01" required></label>
           <label>Contract date <input id="f-date" type="date" required></label>
         </div>
+        <div id="vendor-info" class="notice info hidden"></div>
         <div id="precheck" class="notice hidden"></div>
         <button type="button" class="secondary" id="btn-check">Check related contracts</button>
         <button type="submit">Save contract</button>
@@ -114,6 +115,59 @@ function formData() {
   };
 }
 
+// Contractor history: fills in the name and shows past contracts (facts only, no rating).
+async function vendorLookup() {
+  const tin = $("f-tin").value.trim();
+  const box = $("vendor-info");
+  if (!tin) return box.classList.add("hidden");
+  const params = new URLSearchParams({ tin });
+  if ($("f-agency").value.trim()) params.set("agency", $("f-agency").value.trim());
+  const v = await api("/officer/vendor?" + params);
+  if (v.name && !$("f-vendor").value.trim()) $("f-vendor").value = v.name;
+  if (!v.all.count) {
+    box.textContent = "No earlier contracts on record for this tax ID.";
+  } else {
+    let text = `${v.name || "This contractor"}: ${v.all.count} contract(s) on record, ${money(v.all.amount)} THB in total` +
+               ` (latest ${v.all.last_date || "-"}).`;
+    if (v.with_agency) {
+      text += ` With this agency: ${v.with_agency.count} contract(s), ${money(v.with_agency.amount)} THB.`;
+    }
+    box.textContent = text;
+  }
+  box.classList.remove("hidden");
+}
+
+const MAX_FILES = 5;
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+function readFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ name: file.name, data: String(reader.result).split(",")[1] || "" });
+    reader.onerror = () => reject(new Error("Could not read " + file.name));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function readEvidence(input) {
+  const files = Array.from(input.files || []);
+  if (files.length > MAX_FILES) throw new Error(`You can attach up to ${MAX_FILES} files.`);
+  const tooBig = files.find((f) => f.size > MAX_FILE_BYTES);
+  if (tooBig) throw new Error(`${tooBig.name} is larger than 5 MB.`);
+  return Promise.all(files.map(readFile));
+}
+
+function evidenceList(g) {
+  const box = el("p", "Supporting documents: ", "muted");
+  g.attachments.forEach((a, i) => {
+    const link = el("a", a.name);
+    link.href = `${API}/officer/attachments/${a.id}`;
+    if (i) box.appendChild(document.createTextNode(", "));
+    box.appendChild(link);
+  });
+  return box;
+}
+
 async function precheck() {
   const r = await api("/officer/precheck", { body: formData() });
   const box = $("precheck");
@@ -155,13 +209,20 @@ function groupCard(g) {
     const text = document.createElement("textarea");
     text.rows = 3; text.required = true; text.value = g.justification;
     text.placeholder = "Explain why these contracts were procured separately.";
+    const files = document.createElement("input");
+    files.type = "file"; files.multiple = true; files.accept = ".pdf,.png,.jpg,.jpeg";
     const l1 = el("label", "Reason "); l1.appendChild(select);
     const l2 = el("label", "Justification "); l2.appendChild(text);
-    form.append(l1, l2, el("button", "Submit justification"));
+    const l3 = el("label", "Supporting documents (optional: PDF, PNG or JPG, up to 5 files, 5 MB each) "); l3.appendChild(files);
+    if (g.attachments.length) form.appendChild(evidenceList(g));
+    form.append(l1, l2, l3, el("button", "Submit justification"));
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
-        await api(`/officer/groups/${g.id}/justify`, { body: { reason_category: select.value, justification: text.value } });
+        const attachments = await readEvidence(files);
+        await api(`/officer/groups/${g.id}/justify`, {
+          body: { reason_category: select.value, justification: text.value, attachments },
+        });
         say(`${g.ref}: justification submitted for review.`, "ok");
         await loadGroups();
       } catch (err) { fail(err); }
@@ -169,6 +230,7 @@ function groupCard(g) {
     card.appendChild(form);
   } else {
     card.appendChild(el("p", "Reason given: " + g.justification, "muted"));
+    if (g.attachments.length) card.appendChild(evidenceList(g));
   }
   return card;
 }
@@ -195,6 +257,8 @@ $("login").addEventListener("submit", async (e) => {
   } catch (err) { say(err.message, "err"); }
 });
 $("logout").addEventListener("click", async (e) => { e.preventDefault(); await odooLogout(); showLogin(); });
+$("f-tin").addEventListener("change", () => vendorLookup().catch(fail));
+$("f-agency").addEventListener("change", () => { if ($("f-tin").value.trim()) vendorLookup().catch(fail); });
 $("btn-check").addEventListener("click", () => {
   if ($("contract").reportValidity()) precheck().catch(fail);
 });
@@ -207,6 +271,7 @@ $("contract").addEventListener("submit", async (e) => {
       : "Saved. No justification is needed.", r.group ? "warn" : "ok");
     $("contract").reset();
     $("precheck").classList.add("hidden");
+    $("vendor-info").classList.add("hidden");
     await Promise.all([loadGroups(), loadMine()]);
   } catch (err) { fail(err); }
 });

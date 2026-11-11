@@ -60,6 +60,22 @@ class SoiMaiContract(models.Model):
         for rec in self:
             rec.near_threshold = low <= rec.amount <= params["threshold"]
 
+    @api.model
+    def _public_domain(self, q=None, agency=None, province=None, method=None, year=None):
+        """Search domain for the public page filters (all optional)."""
+        domain = []
+        if q:
+            domain += ["|", "|", ("name", "ilike", q), ("agency_name", "ilike", q), ("vendor_name", "ilike", q)]
+        if agency:
+            domain.append(("agency_name", "=", agency))
+        if province:
+            domain.append(("province", "=", province))
+        if method:
+            domain.append(("method_name", "=", method))
+        if year:
+            domain.append(("budget_year", "=", int(year)))
+        return domain
+
     def _public_dict(self):
         """Fields that are already open data; safe for the public page."""
         self.ensure_one()
@@ -67,6 +83,7 @@ class SoiMaiContract(models.Model):
             "id": self.id,
             "name": self.name,
             "agency": self.agency_name,
+            "province": self.province or "",
             "contractor": self.vendor_name or "",
             "method": self.method_name or "",
             "amount": self.amount,

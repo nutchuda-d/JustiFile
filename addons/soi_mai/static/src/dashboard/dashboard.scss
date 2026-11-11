@@ -1,0 +1,10 @@
+.soi_mai_dashboard {
+    .soi_mai_kpi { cursor: pointer; }
+    .soi_mai_kpi:hover { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08); }
+    .soi_mai_kpi_value { font-size: 2rem; font-weight: 600; line-height: 1.2; }
+    .soi_mai_row { cursor: pointer; padding: 6px 0; }
+    .soi_mai_bar {
+        height: 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.08); margin-top: 4px;
+        > div { height: 100%; border-radius: 4px; background: #4c6a92; min-width: 2px; }
+    }
+}

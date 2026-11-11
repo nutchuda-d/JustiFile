@@ -1,9 +1,16 @@
+import base64
+import binascii
+import os
 from collections import defaultdict
 from datetime import timedelta
 from difflib import SequenceMatcher
 
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError
+
+EVIDENCE_EXTENSIONS = (".pdf", ".png", ".jpg", ".jpeg")
+EVIDENCE_MAX_FILES = 5
+EVIDENCE_MAX_BYTES = 5 * 1024 * 1024   # per file
 
 REASONS = [
     ("urgent", "Urgent need - bidding lead time too long"),
@@ -154,6 +161,40 @@ class SoiMaiContractGroup(models.Model):
             })
         return True
 
+    def add_evidence(self, files):
+        """Attach supporting documents (list of {"name", "data"} with base64 data).
+        They show up in the chatter of the group for the auditor."""
+        self.ensure_one()
+        self._check_role("soi_mai.group_soi_mai_officer")
+        if self.state not in ("requested", "referred"):
+            raise UserError(self.env._("Documents can only be added before the justification is submitted."))
+        if not isinstance(files, list) or len(files) > EVIDENCE_MAX_FILES:
+            raise UserError(self.env._("You can attach up to %s files.", EVIDENCE_MAX_FILES))
+        vals_list = []
+        for item in files:
+            name = os.path.basename(str((item or {}).get("name") or "").replace("\\", "/")).strip()
+            if not name or not name.lower().endswith(EVIDENCE_EXTENSIONS):
+                raise UserError(self.env._("Only PDF, PNG and JPG files can be attached."))
+            try:
+                raw = base64.b64decode(str(item.get("data") or ""), validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise UserError(self.env._("The file %s could not be read.", name)) from exc
+            if not raw or len(raw) > EVIDENCE_MAX_BYTES:
+                raise UserError(self.env._("%s is empty or larger than 5 MB.", name))
+            vals_list.append({"name": name, "raw": raw, "res_model": self._name, "res_id": self.id})
+        attachments = self.env["ir.attachment"].create(vals_list)
+        if attachments:
+            self.message_post(
+                body=self.env._("Supporting documents added."), attachment_ids=attachments.ids,
+            )
+        return attachments
+
+    def _evidence(self):
+        self.ensure_one()
+        return self.env["ir.attachment"].sudo().search(
+            [("res_model", "=", self._name), ("res_id", "=", self.id)], order="id",
+        )
+
     def _review(self, state):
         self._check_role("soi_mai.group_soi_mai_auditor")
         for rec in self:
@@ -296,7 +337,61 @@ class SoiMaiContractGroup(models.Model):
             "reason_category": self.reason_category or "",
             "justification": self.justification or "",
             "review_note": self.review_note or "",
+            "attachments": [{"id": a.id, "name": a.name} for a in self._evidence()],
         }
         if with_contracts:
             data["contracts"] = [c._public_dict() for c in self.contract_ids]
         return data
+
+    # ---------------------------------------------------------------- dashboard
+    @api.model
+    def get_dashboard_data(self):
+        """Numbers for the one-page Management Dashboard."""
+        Contract = self.env["soi.mai.contract"]
+        state_labels = dict(self._fields["state"].selection)
+        reason_labels = dict(self._fields["reason_category"].selection)
+
+        by_state = {state: count for state, count in self._read_group([], ["state"], ["__count"])}
+        total_groups = sum(by_state.values())
+        documented = by_state.get("documented", 0)
+        waiting = by_state.get("requested", 0) + by_state.get("referred", 0)
+
+        submitted = self._read_group([("justified_date", "!=", False)], [], ["days_to_submit:avg", "__count"])[0]
+        total_contracts, total_amount = Contract._read_group([], [], ["__count", "amount:sum"])[0]
+        direct_count, direct_amount = Contract._read_group([("is_direct", "=", True)], [], ["__count", "amount:sum"])[0]
+        near_count = Contract.search_count([("near_threshold", "=", True), ("is_direct", "=", True)])
+
+        reasons = self._read_group([("reason_category", "!=", False)], ["reason_category"], ["__count"])
+        open_by_agency = self._read_group(
+            [("state", "in", ("requested", "referred"))], ["agency_name"], ["__count", "total_amount:sum"],
+        )
+        return {
+            "kpis": {
+                "completeness_rate": round(100 * documented / total_groups, 1) if total_groups else None,
+                "documented": documented,
+                "total_groups": total_groups,
+                "waiting": waiting,
+                "to_review": by_state.get("submitted", 0),
+                "high_priority_open": self.search_count(
+                    [("state", "in", ("requested", "referred")), ("doc_priority", "=", "high")]),
+                "avg_days_to_submit": round(submitted[0] or 0, 1) if submitted[1] else None,
+                "direct_share": round(100 * direct_count / total_contracts, 1) if total_contracts else None,
+                "direct_count": direct_count,
+                "direct_amount": direct_amount or 0,
+                "total_contracts": total_contracts,
+                "total_amount": total_amount or 0,
+                "near_threshold": near_count,
+            },
+            "by_state": [
+                {"key": key, "label": label, "count": by_state.get(key, 0)} for key, label in state_labels.items()
+            ],
+            "by_reason": sorted(
+                [{"key": key, "label": reason_labels.get(key, key), "count": count} for key, count in reasons],
+                key=lambda r: -r["count"],
+            ),
+            "open_by_agency": sorted(
+                [{"agency": agency, "count": count, "amount": amount or 0} for agency, count, amount in open_by_agency],
+                key=lambda r: -r["count"],
+            )[:5],
+            "params": self._get_params(),
+        }

@@ -183,6 +183,11 @@ class SoiMaiCgdImport(models.TransientModel):
             "Contracts updated: %(updated)s\nRelated-contract groups created or extended: %(groups)s",
             time=datetime.now().strftime("%Y-%m-%d %H:%M"), groups=len(groups), **stats,
         )
+        if not stats["projects"]:
+            self.result_message += "\n\n" + self.env._(
+                "The API returned no projects for these filters. Data for the current budget "
+                "year may not be published yet - try the previous year (e.g. %s).", self.budget_year - 1,
+            )
         return {
             "type": "ir.actions.act_window", "res_model": self._name, "res_id": self.id,
             "view_mode": "form", "target": "new",
@@ -196,5 +201,7 @@ class SoiMaiCgdImport(models.TransientModel):
         if not dept_code:
             _logger.info("CGD scheduled import skipped: soi_mai.cgd_dept_code is not set")
             return
-        self.import_contracts(_fiscal_year_be(), dept_code=dept_code, budget_end=None, max_records=1000)
+        year = _fiscal_year_be()
+        for budget_year in (year - 1, year):   # the new year's data is published late
+            self.import_contracts(budget_year, dept_code=dept_code, budget_end=None, max_records=1000)
         self.env["soi.mai.contract.group"].run_grouping()
