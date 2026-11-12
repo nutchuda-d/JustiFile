@@ -1,5 +1,5 @@
-// Shared helpers for the Soi Mai web pages. All data comes from Odoo through /api/soi_mai/*.
-const API = "/api/soi_mai";
+// Shared helpers for the JustiFile web pages. All data comes from Odoo through /api/justifile/*.
+const API = "/api/justifile";
 
 async function api(path, options = {}) {
   const init = { credentials: "same-origin", headers: {} };

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <record id="view_contract_list" model="ir.ui.view">
-        <field name="name">soi.mai.contract.list</field>
-        <field name="model">soi.mai.contract</field>
+        <field name="name">justifile.contract.list</field>
+        <field name="model">justifile.contract</field>
         <field name="arch" type="xml">
             <list>
                 <field name="contract_date"/>
@@ -19,8 +19,8 @@
     </record>
 
     <record id="view_contract_form" model="ir.ui.view">
-        <field name="name">soi.mai.contract.form</field>
-        <field name="model">soi.mai.contract</field>
+        <field name="name">justifile.contract.form</field>
+        <field name="model">justifile.contract</field>
         <field name="arch" type="xml">
             <form>
                 <sheet>
@@ -46,7 +46,7 @@
                             <field name="is_direct"/>
                             <field name="amount"/>
                             <field name="budget_amount"/>
-                            <field name="budget_year"/>
+                            <field name="budget_year" options="{'format': false}"/>
                         </group>
                         <group string="Documentation Check">
                             <field name="near_threshold"/>
@@ -61,8 +61,8 @@
     </record>
 
     <record id="view_contract_search" model="ir.ui.view">
-        <field name="name">soi.mai.contract.search</field>
-        <field name="model">soi.mai.contract</field>
+        <field name="name">justifile.contract.search</field>
+        <field name="model">justifile.contract</field>
         <field name="arch" type="xml">
             <search>
                 <field name="name"/>
@@ -78,14 +78,15 @@
                     <filter name="by_vendor" string="Contractor" context="{'group_by': 'vendor_name'}"/>
                     <filter name="by_method" string="Method" context="{'group_by': 'method_name'}"/>
                     <filter name="by_month" string="Month" context="{'group_by': 'contract_date:month'}"/>
+                    <filter name="by_year" string="Budget Year" context="{'group_by': 'budget_year'}"/>
                 </group>
             </search>
         </field>
     </record>
 
     <record id="view_contract_graph" model="ir.ui.view">
-        <field name="name">soi.mai.contract.graph</field>
-        <field name="model">soi.mai.contract</field>
+        <field name="name">justifile.contract.graph</field>
+        <field name="model">justifile.contract</field>
         <field name="arch" type="xml">
             <graph type="bar">
                 <field name="method_name"/>
@@ -95,8 +96,8 @@
     </record>
 
     <record id="view_contract_pivot" model="ir.ui.view">
-        <field name="name">soi.mai.contract.pivot</field>
-        <field name="model">soi.mai.contract</field>
+        <field name="name">justifile.contract.pivot</field>
+        <field name="model">justifile.contract</field>
         <field name="arch" type="xml">
             <pivot>
                 <field name="agency_name" type="row"/>
@@ -108,13 +109,54 @@
 
     <record id="action_contract" model="ir.actions.act_window">
         <field name="name">Contracts</field>
-        <field name="res_model">soi.mai.contract</field>
+        <field name="res_model">justifile.contract</field>
         <field name="view_mode">list,form,pivot,graph</field>
+    </record>
+
+    <record id="view_contract_pivot_year" model="ir.ui.view">
+        <field name="name">justifile.contract.pivot.year</field>
+        <field name="model">justifile.contract</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <pivot string="Year Comparison" disable_linking="0">
+                <field name="budget_year" type="row"/>
+                <field name="method_name" type="col"/>
+                <field name="amount" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_contract_graph_year" model="ir.ui.view">
+        <field name="name">justifile.contract.graph.year</field>
+        <field name="model">justifile.contract</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <graph string="Year Comparison" type="bar" stacked="1">
+                <field name="budget_year"/>
+                <field name="method_name"/>
+                <field name="amount" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="action_year_comparison" model="ir.actions.act_window">
+        <field name="name">Year Comparison</field>
+        <field name="res_model">justifile.contract</field>
+        <field name="view_mode">pivot,graph,list</field>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'pivot', 'view_id': ref('view_contract_pivot_year')}),
+            (0, 0, {'view_mode': 'graph', 'view_id': ref('view_contract_graph_year')}),
+            (0, 0, {'view_mode': 'list'})]"/>
+        <field name="domain">[('budget_year', '!=', 0)]</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No contracts yet</p>
+            <p>Import contracts for several budget years to compare them here.</p>
+        </field>
     </record>
 
     <record id="action_contract_analysis" model="ir.actions.act_window">
         <field name="name">Procurement Method Mix</field>
-        <field name="res_model">soi.mai.contract</field>
+        <field name="res_model">justifile.contract</field>
         <field name="view_mode">graph,pivot,list</field>
     </record>
 </odoo>

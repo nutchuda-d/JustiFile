@@ -5,18 +5,18 @@
         <field name="name">Procurement Officer (Demo)</field>
         <field name="login">officer</field>
         <field name="password">officer</field>
-        <field name="group_ids" eval="[(4, ref('soi_mai.group_soi_mai_officer'))]"/>
+        <field name="group_ids" eval="[(4, ref('justifile.group_justifile_officer'))]"/>
     </record>
     <record id="user_auditor" model="res.users">
         <field name="name">Internal Auditor (Demo)</field>
         <field name="login">auditor</field>
         <field name="password">auditor</field>
-        <field name="group_ids" eval="[(4, ref('soi_mai.group_soi_mai_auditor'))]"/>
+        <field name="group_ids" eval="[(4, ref('justifile.group_justifile_auditor'))]"/>
     </record>
     <record id="user_executive" model="res.users">
         <field name="name">Executive (Demo)</field>
         <field name="login">executive</field>
         <field name="password">executive</field>
-        <field name="group_ids" eval="[(4, ref('soi_mai.group_soi_mai_executive'))]"/>
+        <field name="group_ids" eval="[(4, ref('justifile.group_justifile_executive'))]"/>
     </record>
 </odoo>

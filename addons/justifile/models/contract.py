@@ -3,8 +3,8 @@ from odoo import api, fields, models
 DIRECT_KEYWORDS = ("เฉพาะเจาะจง", "specific", "direct")
 
 
-class SoiMaiContract(models.Model):
-    _name = "soi.mai.contract"
+class JustiFileContract(models.Model):
+    _name = "justifile.contract"
     _description = "Procurement Contract"
     _order = "contract_date desc, id desc"
 
@@ -39,7 +39,7 @@ class SoiMaiContract(models.Model):
         help="Amount is just below the threshold that requires competitive bidding.",
     )
     group_id = fields.Many2one(
-        "soi.mai.contract.group", "Related Contracts Group",
+        "justifile.contract.group", "Related Contracts Group",
         ondelete="set null", index=True, copy=False,
     )
 
@@ -55,7 +55,7 @@ class SoiMaiContract(models.Model):
 
     @api.depends("amount")
     def _compute_near_threshold(self):
-        params = self.env["soi.mai.contract.group"]._get_params()
+        params = self.env["justifile.contract.group"]._get_params()
         low = params["threshold"] * params["near_ratio"]
         for rec in self:
             rec.near_threshold = low <= rec.amount <= params["threshold"]

@@ -4,7 +4,7 @@ from odoo import fields, http
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request
 
-OFFICER = "soi_mai.group_soi_mai_officer"
+OFFICER = "justifile.group_justifile_officer"
 
 
 def _json(data, status=200):
@@ -34,10 +34,10 @@ def _officer_guard():
     return None
 
 
-class SoiMaiApi(http.Controller):
+class JustiFileApi(http.Controller):
 
     # ------------------------------------------------------------------ public
-    @http.route("/api/soi_mai/public/config", type="http", auth="public", methods=["GET"], csrf=False)
+    @http.route("/api/justifile/public/config", type="http", auth="public", methods=["GET"], csrf=False)
     def public_config(self):
         user = request.env.user
         signed_in = bool(user) and not user._is_public()
@@ -50,17 +50,17 @@ class SoiMaiApi(http.Controller):
 
     def _public_filters(self, kw):
         try:
-            return request.env["soi.mai.contract"]._public_domain(
+            return request.env["justifile.contract"]._public_domain(
                 q=(kw.get("q") or "").strip(), agency=kw.get("agency"), province=kw.get("province"),
                 method=kw.get("method"), year=kw.get("year"),
             )
         except ValueError as exc:
             raise ValidationError("year must be a number") from exc
 
-    @http.route("/api/soi_mai/public/filters", type="http", auth="public", methods=["GET"], csrf=False)
+    @http.route("/api/justifile/public/filters", type="http", auth="public", methods=["GET"], csrf=False)
     def public_filter_options(self):
         """Values for the filter boxes on the public page."""
-        Contract = request.env["soi.mai.contract"].sudo()
+        Contract = request.env["justifile.contract"].sudo()
 
         def values(field, limit=None):
             rows = Contract._read_group([(field, "!=", False)], [field], ["__count"])
@@ -74,9 +74,9 @@ class SoiMaiApi(http.Controller):
             "years": sorted({int(y) for y in values("budget_year") if y != "0"}, reverse=True),
         })
 
-    @http.route("/api/soi_mai/public/summary", type="http", auth="public", methods=["GET"], csrf=False)
+    @http.route("/api/justifile/public/summary", type="http", auth="public", methods=["GET"], csrf=False)
     def public_summary(self, **kw):
-        Contract = request.env["soi.mai.contract"].sudo()
+        Contract = request.env["justifile.contract"].sudo()
         try:
             domain = self._public_filters(kw)
         except ValidationError as exc:
@@ -102,9 +102,9 @@ class SoiMaiApi(http.Controller):
             )[:10],
         })
 
-    @http.route("/api/soi_mai/public/contracts", type="http", auth="public", methods=["GET"], csrf=False)
+    @http.route("/api/justifile/public/contracts", type="http", auth="public", methods=["GET"], csrf=False)
     def public_contracts(self, limit=20, offset=0, **kw):
-        Contract = request.env["soi.mai.contract"].sudo()
+        Contract = request.env["justifile.contract"].sudo()
         try:
             domain = self._public_filters(kw)
             limit, offset = max(1, min(int(limit), 100)), max(0, int(offset))
@@ -117,12 +117,12 @@ class SoiMaiApi(http.Controller):
         })
 
     # ----------------------------------------------------------------- officer
-    @http.route("/api/soi_mai/officer/contracts", type="http", auth="public", methods=["GET"], csrf=False)
+    @http.route("/api/justifile/officer/contracts", type="http", auth="public", methods=["GET"], csrf=False)
     def officer_contracts(self, limit=20, **kw):
         denied = _officer_guard()
         if denied:
             return denied
-        records = request.env["soi.mai.contract"].search([("source", "=", "manual")], limit=min(int(limit), 100))
+        records = request.env["justifile.contract"].search([("source", "=", "manual")], limit=min(int(limit), 100))
         return _json({"items": [dict(c._public_dict(), group=c.group_id.name or None) for c in records]})
 
     def _contract_vals(self, data):
@@ -150,7 +150,7 @@ class SoiMaiApi(http.Controller):
             "source": "manual",
         }
 
-    @http.route("/api/soi_mai/officer/vendor", type="http", auth="public", methods=["GET"], csrf=False)
+    @http.route("/api/justifile/officer/vendor", type="http", auth="public", methods=["GET"], csrf=False)
     def officer_vendor(self, tin=None, agency=None, **kw):
         """Name and past contracts for a contractor tax ID (plain facts, no rating)."""
         denied = _officer_guard()
@@ -159,7 +159,7 @@ class SoiMaiApi(http.Controller):
         tin = (tin or "").strip()
         if not tin:
             return _error("tin is required")
-        Contract = request.env["soi.mai.contract"].sudo()
+        Contract = request.env["justifile.contract"].sudo()
         latest = Contract.search([("vendor_tin", "=", tin), ("vendor_name", "!=", False)], limit=1)
 
         def totals(domain):
@@ -171,20 +171,20 @@ class SoiMaiApi(http.Controller):
             result["with_agency"] = totals([("vendor_tin", "=", tin), ("agency_name", "=", agency.strip())])
         return _json(result)
 
-    @http.route("/api/soi_mai/officer/attachments/<int:attachment_id>", type="http", auth="public",
+    @http.route("/api/justifile/officer/attachments/<int:attachment_id>", type="http", auth="public",
                 methods=["GET"], csrf=False)
     def officer_attachment(self, attachment_id):
         denied = _officer_guard()
         if denied:
             return denied
         attachment = request.env["ir.attachment"].sudo().search([
-            ("id", "=", attachment_id), ("res_model", "=", "soi.mai.contract.group"),
+            ("id", "=", attachment_id), ("res_model", "=", "justifile.contract.group"),
         ], limit=1)
         if not attachment:
             return _error("File not found", 404)
         return request.env["ir.binary"]._get_stream_from(attachment, "raw").get_response(as_attachment=True)
 
-    @http.route("/api/soi_mai/officer/precheck", type="http", auth="public", methods=["POST"], csrf=False)
+    @http.route("/api/justifile/officer/precheck", type="http", auth="public", methods=["POST"], csrf=False)
     def officer_precheck(self):
         denied = _officer_guard()
         if denied:
@@ -193,65 +193,82 @@ class SoiMaiApi(http.Controller):
             vals = self._contract_vals(_body())
         except ValidationError as exc:
             return _error(str(exc))
-        return _json(request.env["soi.mai.contract.group"].precheck(
+        return _json(request.env["justifile.contract.group"].precheck(
             vals["agency_name"], vals["vendor_tin"], vals["amount"], vals["contract_date"], vals["method_name"],
         ))
 
-    @http.route("/api/soi_mai/officer/contracts", type="http", auth="public", methods=["POST"], csrf=False)
+    @http.route("/api/justifile/officer/contracts", type="http", auth="public", methods=["POST"], csrf=False)
     def officer_create_contract(self):
         denied = _officer_guard()
         if denied:
             return denied
         try:
-            vals = self._contract_vals(_body())
+            data = _body()
+            vals = self._contract_vals(data)
         except ValidationError as exc:
             return _error(str(exc))
-        contract = request.env["soi.mai.contract"].create(vals)
-        request.env["soi.mai.contract.group"].run_grouping(vals["agency_name"], vals["vendor_tin"])
+        contract = request.env["justifile.contract"].create(vals)
+        request.env["justifile.contract.group"].run_grouping(vals["agency_name"], vals["vendor_tin"])
         group = contract.group_id
+
+        # Optional: the reason for separate contracts, given together with the contract.
+        justified, justification_error = False, None
+        reason = data.get("justification")
+        if isinstance(reason, dict) and group and group.state in ("requested", "referred"):
+            try:
+                with request.env.cr.savepoint():
+                    self._apply_justification(group, reason)
+                justified = True
+            except (ValidationError, UserError, AccessError) as exc:
+                justification_error = str(exc)   # the contract itself stays saved
         return _json({
             "contract": contract._public_dict(),
             "group": group.sudo()._api_dict(with_contracts=True) if group else None,
+            "justified": justified,
+            "justification_error": justification_error,
         }, status=201)
 
-    @http.route("/api/soi_mai/officer/groups", type="http", auth="public", methods=["GET"], csrf=False)
+    def _apply_justification(self, group, data):
+        reasons = dict(group._fields["reason_category"].selection)
+        if data.get("reason_category") not in reasons:
+            raise ValidationError("reason_category must be one of: %s" % ", ".join(reasons))
+        if not str(data.get("justification") or "").strip():
+            raise ValidationError("Please write the justification first.")
+        group.write({
+            "reason_category": data["reason_category"],
+            "justification": str(data["justification"]).strip(),
+            "reference_doc": str(data.get("reference_doc") or "").strip()[:100] or False,
+        })
+        if data.get("attachments"):
+            group.add_evidence(data["attachments"])
+        group.action_submit_justification()
+
+    @http.route("/api/justifile/officer/groups", type="http", auth="public", methods=["GET"], csrf=False)
     def officer_groups(self, state=None, **kw):
         denied = _officer_guard()
         if denied:
             return denied
         domain = [("state", "=", state)] if state else []
-        groups = request.env["soi.mai.contract.group"].search(domain, limit=100)
+        groups = request.env["justifile.contract.group"].search(domain, limit=100)
         return _json({"items": [g._api_dict(with_contracts=True) for g in groups]})
 
-    @http.route("/api/soi_mai/officer/groups/<int:group_id>/justify", type="http", auth="public",
+    @http.route("/api/justifile/officer/groups/<int:group_id>/justify", type="http", auth="public",
                 methods=["POST"], csrf=False)
     def officer_justify(self, group_id):
         denied = _officer_guard()
         if denied:
             return denied
-        group = request.env["soi.mai.contract.group"].browse(group_id).exists()
+        group = request.env["justifile.contract.group"].browse(group_id).exists()
         if not group:
             return _error("Group not found", 404)
         try:
-            data = _body()
-            reasons = dict(group._fields["reason_category"].selection)
-            if data.get("reason_category") not in reasons:
-                raise ValidationError("reason_category must be one of: %s" % ", ".join(reasons))
-            if not str(data.get("justification") or "").strip():
-                raise ValidationError("Please write the justification first.")
-            group.write({
-                "reason_category": data["reason_category"],
-                "justification": str(data["justification"]).strip(),
-            })
-            if data.get("attachments"):
-                group.add_evidence(data["attachments"])
-            group.action_submit_justification()
+            self._apply_justification(group, _body())
         except (ValidationError, UserError, AccessError) as exc:
             request.env.cr.rollback()
             return _error(str(exc))
         return _json({"group": group._api_dict(with_contracts=True)})
 
-    @http.route("/api/soi_mai/officer/reasons", type="http", auth="public", methods=["GET"], csrf=False)
+    @http.route("/api/justifile/officer/reasons", type="http", auth="public", methods=["GET"], csrf=False)
     def officer_reasons(self):
-        selection = request.env["soi.mai.contract.group"]._fields["reason_category"].selection
+        selection = request.env["justifile.contract.group"]._fields["reason_category"].selection
         return _json({"items": [{"value": v, "label": l} for v, l in selection]})

@@ -1,0 +1,27 @@
+.justifile_dashboard {
+    .justifile_kpi { cursor: pointer; }
+    .justifile_kpi:hover { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08); }
+    .justifile_kpi_value { font-size: 2rem; font-weight: 600; line-height: 1.2; }
+    .justifile_row { cursor: pointer; padding: 6px 0; }
+    .justifile_bar {
+        height: 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.08); margin-top: 4px;
+        > div { height: 100%; border-radius: 4px; background: #4c6a92; min-width: 2px; }
+    }
+    .justifile_hist {
+        display: flex; align-items: stretch; gap: 2px; height: 220px;
+    }
+    .justifile_hist_col {
+        flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; cursor: pointer; padding: 0 1px;
+        &:hover .justifile_hist_bar { background: #35517a; }
+    }
+    .justifile_hist_edge { border-right: 2px dashed rgba(0, 0, 0, 0.55); padding-right: 4px; margin-right: 3px; }
+    .justifile_hist_count { height: 18px; font-size: 11px; text-align: center; }
+    .justifile_hist_plot {
+        flex: 1 1 auto; display: flex; align-items: flex-end; border-bottom: 1px solid rgba(0, 0, 0, 0.25);
+    }
+    .justifile_hist_bar { width: 100%; background: #4c6a92; border-radius: 4px 4px 0 0; }
+    .justifile_hist_label { height: 18px; font-size: 11px; text-align: center; color: rgba(0, 0, 0, 0.6); }
+    .justifile_cmp { color: rgba(0, 0, 0, 0.55); margin-top: 2px; min-height: 1em; }
+    .justifile_years tbody tr { cursor: pointer; }
+    .form-select { width: auto; }
+}

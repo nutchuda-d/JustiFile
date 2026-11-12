@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <record id="view_group_list" model="ir.ui.view">
-        <field name="name">soi.mai.contract.group.list</field>
-        <field name="model">soi.mai.contract.group</field>
+        <field name="name">justifile.contract.group.list</field>
+        <field name="model">justifile.contract.group</field>
         <field name="arch" type="xml">
             <list create="0">
                 <field name="name"/>
@@ -21,20 +21,20 @@
     </record>
 
     <record id="view_group_form" model="ir.ui.view">
-        <field name="name">soi.mai.contract.group.form</field>
-        <field name="model">soi.mai.contract.group</field>
+        <field name="name">justifile.contract.group.form</field>
+        <field name="model">justifile.contract.group</field>
         <field name="arch" type="xml">
             <form create="0">
                 <header>
                     <button name="action_submit_justification" type="object" string="Submit Justification"
                             class="btn-primary" invisible="state not in ('requested', 'referred')"
-                            groups="soi_mai.group_soi_mai_officer,base.group_system"/>
+                            groups="justifile.group_justifile_officer,base.group_system"/>
                     <button name="action_mark_documented" type="object" string="Mark as Documented"
                             class="btn-primary" invisible="state != 'submitted'"
-                            groups="soi_mai.group_soi_mai_auditor,base.group_system"/>
+                            groups="justifile.group_justifile_auditor,base.group_system"/>
                     <button name="action_refer" type="object" string="Refer for Second Opinion"
                             invisible="state != 'submitted'"
-                            groups="soi_mai.group_soi_mai_auditor,base.group_system"/>
+                            groups="justifile.group_justifile_auditor,base.group_system"/>
                     <field name="state" widget="statusbar" statusbar_visible="requested,submitted,documented"/>
                 </header>
                 <sheet>
@@ -52,6 +52,7 @@
                             <field name="date_from"/>
                             <field name="date_to"/>
                             <field name="span_days"/>
+                            <field name="budget_year" options="{'format': false}"/>
                         </group>
                         <group string="Why a justification is requested">
                             <field name="check_combined"/>
@@ -79,13 +80,15 @@
                                 <field name="reason_category" readonly="state in ('submitted', 'documented')"/>
                                 <field name="justification" readonly="state in ('submitted', 'documented')"
                                        placeholder="Explain why these contracts were procured separately. Attach supporting documents in the chatter."/>
+                                <field name="reference_doc" readonly="state in ('submitted', 'documented')"/>
                                 <field name="justified_by"/>
                                 <field name="justified_date"/>
                             </group>
                         </page>
                         <page string="Review" name="review">
                             <group>
-                                <field name="review_note" groups="soi_mai.group_soi_mai_auditor,base.group_system"/>
+                                <field name="review_note" groups="justifile.group_justifile_auditor,base.group_system"
+                                       placeholder="Required when referring: say what is still needed."/>
                                 <field name="reviewer_id"/>
                                 <field name="review_date"/>
                             </group>
@@ -98,8 +101,8 @@
     </record>
 
     <record id="view_group_kanban" model="ir.ui.view">
-        <field name="name">soi.mai.contract.group.kanban</field>
-        <field name="model">soi.mai.contract.group</field>
+        <field name="name">justifile.contract.group.kanban</field>
+        <field name="model">justifile.contract.group</field>
         <field name="arch" type="xml">
             <kanban default_group_by="state" create="0" group_create="0" group_delete="0" records_draggable="0">
                 <field name="doc_priority"/>
@@ -123,8 +126,8 @@
     </record>
 
     <record id="view_group_search" model="ir.ui.view">
-        <field name="name">soi.mai.contract.group.search</field>
-        <field name="model">soi.mai.contract.group</field>
+        <field name="name">justifile.contract.group.search</field>
+        <field name="model">justifile.contract.group</field>
         <field name="arch" type="xml">
             <search>
                 <field name="name"/>
@@ -137,14 +140,15 @@
                     <filter name="by_state" string="Status" context="{'group_by': 'state'}"/>
                     <filter name="by_agency" string="Agency" context="{'group_by': 'agency_name'}"/>
                     <filter name="by_reason" string="Reason" context="{'group_by': 'reason_category'}"/>
+                    <filter name="by_year" string="Budget Year" context="{'group_by': 'budget_year'}"/>
                 </group>
             </search>
         </field>
     </record>
 
     <record id="view_group_graph" model="ir.ui.view">
-        <field name="name">soi.mai.contract.group.graph</field>
-        <field name="model">soi.mai.contract.group</field>
+        <field name="name">justifile.contract.group.graph</field>
+        <field name="model">justifile.contract.group</field>
         <field name="arch" type="xml">
             <graph type="bar" stacked="1">
                 <field name="agency_name"/>
@@ -154,8 +158,8 @@
     </record>
 
     <record id="view_group_pivot" model="ir.ui.view">
-        <field name="name">soi.mai.contract.group.pivot</field>
-        <field name="model">soi.mai.contract.group</field>
+        <field name="name">justifile.contract.group.pivot</field>
+        <field name="model">justifile.contract.group</field>
         <field name="arch" type="xml">
             <pivot>
                 <field name="agency_name" type="row"/>
@@ -169,7 +173,7 @@
 
     <record id="action_group" model="ir.actions.act_window">
         <field name="name">Related Contract Groups</field>
-        <field name="res_model">soi.mai.contract.group</field>
+        <field name="res_model">justifile.contract.group</field>
         <field name="view_mode">kanban,list,form</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">No related contracts need a justification</p>
@@ -180,13 +184,13 @@
 
     <record id="action_group_analysis" model="ir.actions.act_window">
         <field name="name">Documentation Status</field>
-        <field name="res_model">soi.mai.contract.group</field>
+        <field name="res_model">justifile.contract.group</field>
         <field name="view_mode">graph,pivot</field>
     </record>
 
     <record id="action_group_reasons" model="ir.actions.act_window">
         <field name="name">Reasons Given</field>
-        <field name="res_model">soi.mai.contract.group</field>
+        <field name="res_model">justifile.contract.group</field>
         <field name="view_mode">graph,pivot</field>
         <field name="domain">[('reason_category', '!=', False)]</field>
         <field name="context">{'graph_groupbys': ['reason_category'], 'graph_mode': 'pie', 'pivot_row_groupby': ['reason_category']}</field>
@@ -194,7 +198,7 @@
 
     <record id="action_server_run_grouping" model="ir.actions.server">
         <field name="name">Check Related Contracts Now</field>
-        <field name="model_id" ref="model_soi_mai_contract_group"/>
+        <field name="model_id" ref="model_justifile_contract_group"/>
         <field name="state">code</field>
         <field name="code">action = model.action_run_grouping()</field>
     </record>

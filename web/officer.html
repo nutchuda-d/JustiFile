@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Soi Mai - Procurement Officer</title>
+  <title>JustiFile - Procurement Officer</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
-  <h1>Soi Mai · Procurement Officer</h1>
+  <h1>JustiFile · Procurement Officer</h1>
   <nav>
     <span id="who" class="muted" style="color:#cfe0f5"></span>
     <a href="index.html">Public view</a>
@@ -50,6 +50,19 @@
         </div>
         <div id="vendor-info" class="notice info hidden"></div>
         <div id="precheck" class="notice hidden"></div>
+        <div id="inline-just" class="card hidden">
+          <h2>Reason for separate contracts</h2>
+          <p class="muted">The purchase request already explains this contract on its own. Only add why it is
+            separate from the related contracts above. You can point to the existing document instead of retyping it.</p>
+          <label>Reason <select id="j-reason"></select></label>
+          <label>Justification <textarea id="j-text" rows="3"
+            placeholder="Explain why these contracts were procured separately."></textarea></label>
+          <label>Purchase request ref. (optional) <input id="j-ref" maxlength="100"
+            placeholder="Number of the existing purchase request report"></label>
+          <label>Supporting documents (optional: PDF, PNG or JPG, up to 5 files, 5 MB each)
+            <input id="j-files" type="file" multiple accept=".pdf,.png,.jpg,.jpeg"></label>
+          <label><input id="j-later" type="checkbox" style="width:auto"> Save now and add the reason later</label>
+        </div>
         <button type="button" class="secondary" id="btn-check">Check related contracts</button>
         <button type="submit">Save contract</button>
       </form>
@@ -103,6 +116,7 @@ async function start() {
   $("logout").classList.remove("hidden");
   $("who").textContent = config.user;
   reasons = (await api("/officer/reasons")).items;
+  $("j-reason").replaceChildren(...reasons.map((r) => { const o = el("option", r.label); o.value = r.value; return o; }));
   await Promise.all([loadGroups(), loadMine()]);
 }
 
@@ -177,12 +191,13 @@ async function precheck() {
     box.appendChild(el("strong", "A justification will be requested. "));
     box.appendChild(el("span",
       `Together with ${r.related.length} related contract(s) within ${r.window_days} days, the combined amount is ` +
-      `${money(r.combined_amount)} THB (threshold ${money(r.threshold)} THB). You can still save; ` +
-      `please be ready to record the reason.`));
+      `${money(r.combined_amount)} THB (threshold ${money(r.threshold)} THB). ` +
+      `Please record the reason below when you save.`));
     box.appendChild(contractsTable(r.related));
   } else {
     box.className = "notice ok";
     box.textContent = "No related contracts need a justification for this entry.";
+    $("inline-just").classList.add("hidden");
   }
   return r;
 }
@@ -209,19 +224,22 @@ function groupCard(g) {
     const text = document.createElement("textarea");
     text.rows = 3; text.required = true; text.value = g.justification;
     text.placeholder = "Explain why these contracts were procured separately.";
+    const ref = document.createElement("input");
+    ref.maxLength = 100; ref.value = g.reference_doc; ref.placeholder = "Number of the existing purchase request report";
     const files = document.createElement("input");
     files.type = "file"; files.multiple = true; files.accept = ".pdf,.png,.jpg,.jpeg";
     const l1 = el("label", "Reason "); l1.appendChild(select);
     const l2 = el("label", "Justification "); l2.appendChild(text);
     const l3 = el("label", "Supporting documents (optional: PDF, PNG or JPG, up to 5 files, 5 MB each) "); l3.appendChild(files);
     if (g.attachments.length) form.appendChild(evidenceList(g));
-    form.append(l1, l2, l3, el("button", "Submit justification"));
+    const l4 = el("label", "Purchase request ref. (optional) "); l4.appendChild(ref);
+    form.append(l1, l2, l4, l3, el("button", "Submit justification"));
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
         const attachments = await readEvidence(files);
         await api(`/officer/groups/${g.id}/justify`, {
-          body: { reason_category: select.value, justification: text.value, attachments },
+          body: { reason_category: select.value, justification: text.value, reference_doc: ref.value, attachments },
         });
         say(`${g.ref}: justification submitted for review.`, "ok");
         await loadGroups();
@@ -230,6 +248,7 @@ function groupCard(g) {
     card.appendChild(form);
   } else {
     card.appendChild(el("p", "Reason given: " + g.justification, "muted"));
+    if (g.reference_doc) card.appendChild(el("p", "Purchase request ref.: " + g.reference_doc, "muted"));
     if (g.attachments.length) card.appendChild(evidenceList(g));
   }
   return card;
@@ -265,13 +284,38 @@ $("btn-check").addEventListener("click", () => {
 $("contract").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
-    const r = await api("/officer/contracts", { body: formData() });
-    say(r.group
-      ? `Saved. This contract is part of ${r.group.ref}; a justification is requested below.`
-      : "Saved. No justification is needed.", r.group ? "warn" : "ok");
+    // Ask for the reason at the moment of saving, but only when related contracts go over the threshold.
+    const pre = await precheck();
+    const inline = $("inline-just");
+    if (pre.needs_justification && inline.classList.contains("hidden")) {
+      inline.classList.remove("hidden");
+      $("j-text").focus();
+      return say("Related contracts go over the threshold. Add the reason below, then save again.", "warn");
+    }
+    const body = formData();
+    if (pre.needs_justification && !$("j-later").checked) {
+      if (!$("j-text").value.trim()) {
+        return say("Please write the justification, or tick \"add the reason later\".", "err");
+      }
+      body.justification = {
+        reason_category: $("j-reason").value, justification: $("j-text").value,
+        reference_doc: $("j-ref").value, attachments: await readEvidence($("j-files")),
+      };
+    }
+    const r = await api("/officer/contracts", { body });
+    if (r.justified) {
+      say(`Saved. ${r.group.ref}: justification submitted for review.`, "ok");
+    } else if (r.group && r.justification_error) {
+      say(`Saved, but the justification was not submitted: ${r.justification_error} Please complete it below (${r.group.ref}).`, "warn");
+    } else if (r.group) {
+      say(`Saved. This contract is part of ${r.group.ref}; a justification is requested below.`, "warn");
+    } else {
+      say("Saved. No justification is needed.", "ok");
+    }
     $("contract").reset();
     $("precheck").classList.add("hidden");
     $("vendor-info").classList.add("hidden");
+    inline.classList.add("hidden");
     await Promise.all([loadGroups(), loadMine()]);
   } catch (err) { fail(err); }
 });

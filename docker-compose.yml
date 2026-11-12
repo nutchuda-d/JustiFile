@@ -1,4 +1,6 @@
-# Soi Mai prototype: PostgreSQL + Odoo 19 Community + a small web front end.
+name: justifile
+
+# JustiFile prototype: PostgreSQL + Odoo 19 Community + a small web front end.
 #   Odoo (auditor / executive):  http://localhost:8069
 #   Web pages (officer / public): http://localhost:8081
 services:

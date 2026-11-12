@@ -68,25 +68,32 @@ def _fiscal_year_be(today=None):
     return today.year + 543 + (1 if today.month >= 10 else 0)
 
 
-class SoiMaiCgdImport(models.TransientModel):
-    _name = "soi.mai.cgd.import"
+class JustiFileCgdImport(models.TransientModel):
+    _name = "justifile.cgd.import"
     _description = "Import Contracts from CGD Open Data"
 
-    budget_year = fields.Integer("Budget Year (B.E.)", required=True, default=lambda s: _fiscal_year_be())
-    dept_code = fields.Char("Agency Code", help="CGD department code (dept_code), e.g. the municipality's code.")
+    # The current budget year is published late, so the defaults cover the three years before it.
+    year_from = fields.Integer("From Budget Year (B.E.)", required=True, default=lambda s: _fiscal_year_be() - 3)
+    budget_year = fields.Integer("To Budget Year (B.E.)", required=True, default=lambda s: _fiscal_year_be() - 1)
+    agency_name = fields.Char(
+        "Agency Name",
+        help="Exact agency name as written in e-GP, e.g. เทศบาลตำบลศาลายา. Only contracts of this agency are kept.",
+    )
+    dept_code = fields.Char("Agency Code", help="CGD department code (dept_code), if you know it. Usually not needed.")
     keyword = fields.Char(help="Optional keyword in the project name.")
-    budget_end = fields.Float("Max Project Budget (THB)", default=500000)
+    budget_end = fields.Float("Max Project Budget (THB)", default=0,
+                              help="0 = no limit. Leave at 0 to get every contract, so the amount chart is not skewed.")
     max_records = fields.Integer("Max Projects to Fetch", default=500, required=True)
     run_grouping = fields.Boolean("Check related contracts after import", default=True)
     result_message = fields.Text(readonly=True)
 
     @api.model
     def _get_api_key(self):
-        key = os.environ.get("CGD_API_KEY") or self.env["ir.config_parameter"].sudo().get_param("soi_mai.cgd_api_key")
+        key = os.environ.get("CGD_API_KEY") or self.env["ir.config_parameter"].sudo().get_param("justifile.cgd_api_key")
         if not key:
             raise UserError(self.env._(
                 "No CGD API key found. Put CGD_API_KEY in the .env file (or set the "
-                "system parameter soi_mai.cgd_api_key) and restart Odoo."
+                "system parameter justifile.cgd_api_key) and restart Odoo."
             ))
         return key
 
@@ -123,7 +130,7 @@ class SoiMaiCgdImport(models.TransientModel):
                 "cgd_project_id": project_id,
                 "name": project.get("project_name") or project_id or "-",
                 "contract_no": contract_no,
-                "agency_name": project.get("dept_name") or "-",
+                "agency_name": (project.get("dept_name") or "").strip() or "-",
                 "agency_sub_name": project.get("dept_sub_name") or False,
                 "agency_code": project.get("dept_code") or False,
                 "province": project.get("province") or False,
@@ -140,10 +147,16 @@ class SoiMaiCgdImport(models.TransientModel):
         return vals_list
 
     @api.model
-    def import_contracts(self, budget_year, dept_code=None, keyword=None, budget_end=None, max_records=500):
+    def import_contracts(self, budget_year, dept_code=None, keyword=None, budget_end=None, max_records=500,
+                         agency_name=None):
+        """agency_name: the API has no agency filter and returns no agency code, so we search by
+        the name (the keyword also matches agency names) and keep only exact matches."""
         api_key = self._get_api_key()
-        Contract = self.env["soi.mai.contract"].sudo()
-        fetched = created = updated = 0
+        Contract = self.env["justifile.contract"].sudo()
+        agency_name = (agency_name or "").strip()
+        if agency_name and not keyword:
+            keyword = agency_name
+        fetched = created = updated = skipped = 0
         offset = 0
         while fetched < max_records:
             params = {"year": budget_year, "limit": min(PAGE_SIZE, max_records - fetched), "offset": offset}
@@ -157,6 +170,9 @@ class SoiMaiCgdImport(models.TransientModel):
             if not projects:
                 break
             for project in projects:
+                if agency_name and (project.get("dept_name") or "").strip() != agency_name:
+                    skipped += 1
+                    continue
                 for vals in self._prepare_contract_vals(project):
                     existing = Contract.search([("external_key", "=", vals["external_key"])], limit=1)
                     if existing:
@@ -169,24 +185,37 @@ class SoiMaiCgdImport(models.TransientModel):
             offset += len(projects)
             if len(projects) < params["limit"]:
                 break
-        _logger.info("CGD import: %s projects, %s contracts created, %s updated", fetched, created, updated)
-        return {"projects": fetched, "created": created, "updated": updated}
+        _logger.info("CGD import: %s projects, %s skipped, %s contracts created, %s updated",
+                     fetched, skipped, created, updated)
+        return {"projects": fetched - skipped, "skipped": skipped, "created": created, "updated": updated}
 
     def action_import(self):
         self.ensure_one()
-        stats = self.import_contracts(
-            self.budget_year, self.dept_code, self.keyword, self.budget_end, self.max_records,
-        )
-        groups = self.env["soi.mai.contract.group"].run_grouping() if self.run_grouping else []
+        if self.year_from > self.budget_year:
+            raise UserError(self.env._("'From' year must not be after 'To' year."))
+        if self.budget_year - self.year_from >= 10:
+            raise UserError(self.env._("Please import at most 10 budget years at a time."))
+        stats = {"projects": 0, "skipped": 0, "created": 0, "updated": 0}
+        per_year = []
+        for year in range(self.year_from, self.budget_year + 1):
+            result = self.import_contracts(
+                year, self.dept_code, self.keyword, self.budget_end, self.max_records,
+                agency_name=self.agency_name,
+            )
+            for key in stats:
+                stats[key] += result[key]
+            per_year.append("%s: %s" % (year, result["projects"]))
+        groups = self.env["justifile.contract.group"].run_grouping() if self.run_grouping else []
         self.result_message = self.env._(
-            "Finished at %(time)s\nProjects read: %(projects)s\nContracts created: %(created)s\n"
+            "Finished at %(time)s\nProjects kept: %(projects)s\nSkipped (other agencies): %(skipped)s\n"
+            "Contracts created: %(created)s\n"
             "Contracts updated: %(updated)s\nRelated-contract groups created or extended: %(groups)s",
             time=datetime.now().strftime("%Y-%m-%d %H:%M"), groups=len(groups), **stats,
-        )
+        ) + "\n" + self.env._("Projects kept per budget year: %s", ", ".join(per_year))
         if not stats["projects"]:
             self.result_message += "\n\n" + self.env._(
                 "The API returned no projects for these filters. Data for the current budget "
-                "year may not be published yet - try the previous year (e.g. %s).", self.budget_year - 1,
+                "year may not be published yet - try earlier years (e.g. %s).", self.year_from - 1,
             )
         return {
             "type": "ir.actions.act_window", "res_model": self._name, "res_id": self.id,
@@ -195,13 +224,15 @@ class SoiMaiCgdImport(models.TransientModel):
 
     @api.model
     def cron_import(self):
-        """Scheduled import; agency code comes from the system parameter soi_mai.cgd_dept_code."""
+        """Scheduled import; agency code comes from the system parameter justifile.cgd_dept_code."""
         icp = self.env["ir.config_parameter"].sudo()
-        dept_code = icp.get_param("soi_mai.cgd_dept_code")
-        if not dept_code:
-            _logger.info("CGD scheduled import skipped: soi_mai.cgd_dept_code is not set")
+        dept_code = icp.get_param("justifile.cgd_dept_code")
+        agency_name = icp.get_param("justifile.cgd_agency_name")
+        if not (dept_code or agency_name):
+            _logger.info("CGD scheduled import skipped: set justifile.cgd_agency_name (or cgd_dept_code)")
             return
         year = _fiscal_year_be()
         for budget_year in (year - 1, year):   # the new year's data is published late
-            self.import_contracts(budget_year, dept_code=dept_code, budget_end=None, max_records=1000)
-        self.env["soi.mai.contract.group"].run_grouping()
+            self.import_contracts(budget_year, dept_code=dept_code, budget_end=None, max_records=1000,
+                                  agency_name=agency_name)
+        self.env["justifile.contract.group"].run_grouping()

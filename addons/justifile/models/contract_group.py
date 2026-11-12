@@ -21,8 +21,8 @@ REASONS = [
 ]
 
 
-class SoiMaiContractGroup(models.Model):
-    _name = "soi.mai.contract.group"
+class JustiFileContractGroup(models.Model):
+    _name = "justifile.contract.group"
     _description = "Related Contracts Group"
     _inherit = ["mail.thread", "mail.activity.mixin"]
     _order = "id desc"
@@ -31,7 +31,7 @@ class SoiMaiContractGroup(models.Model):
     agency_name = fields.Char("Agency", required=True, index=True, readonly=True)
     vendor_tin = fields.Char("Contractor Tax ID", index=True, readonly=True)
     vendor_name = fields.Char("Contractor", readonly=True)
-    contract_ids = fields.One2many("soi.mai.contract", "group_id", "Contracts")
+    contract_ids = fields.One2many("justifile.contract", "group_id", "Contracts")
 
     contract_count = fields.Integer(compute="_compute_totals", store=True)
     total_amount = fields.Float("Combined Amount (THB)", digits=(16, 2), compute="_compute_totals", store=True)
@@ -39,6 +39,10 @@ class SoiMaiContractGroup(models.Model):
     date_from = fields.Date("First Contract", compute="_compute_totals", store=True)
     date_to = fields.Date("Last Contract", compute="_compute_totals", store=True)
     span_days = fields.Integer("Span (days)", compute="_compute_totals", store=True)
+    budget_year = fields.Integer(
+        "Budget Year (B.E.)", compute="_compute_totals", store=True, index=True, aggregator=None,
+        help="Thai budget year (Oct-Sep) of the first contract in the group.",
+    )
 
     check_combined = fields.Boolean("Combined amount above threshold", compute="_compute_checks", store=True)
     check_near_threshold = fields.Boolean("Amounts close to threshold", compute="_compute_checks", store=True)
@@ -62,6 +66,11 @@ class SoiMaiContractGroup(models.Model):
     )
     reason_category = fields.Selection(REASONS, "Reason", tracking=True)
     justification = fields.Text(tracking=True)
+    reference_doc = fields.Char(
+        "Purchase Request Ref.", tracking=True,
+        help="Number of the existing purchase request report(s) that already explain each contract, "
+             "so the officer does not have to write the same thing twice.",
+    )
     justified_by = fields.Many2one("res.users", "Submitted By", readonly=True)
     justified_date = fields.Datetime("Submitted On", readonly=True)
     reviewer_id = fields.Many2one("res.users", "Reviewed By", readonly=True)
@@ -81,9 +90,9 @@ class SoiMaiContractGroup(models.Model):
     def _get_params(self):
         icp = self.env["ir.config_parameter"].sudo()
         return {
-            "threshold": float(icp.get_param("soi_mai.threshold", 500000)),
-            "window_days": int(icp.get_param("soi_mai.window_days", 30)),
-            "near_ratio": float(icp.get_param("soi_mai.near_ratio", 0.9)),
+            "threshold": float(icp.get_param("justifile.threshold", 500000)),
+            "window_days": int(icp.get_param("justifile.window_days", 30)),
+            "near_ratio": float(icp.get_param("justifile.near_ratio", 0.9)),
         }
 
     @api.model
@@ -101,6 +110,8 @@ class SoiMaiContractGroup(models.Model):
             rec.date_from = min(dates) if dates else False
             rec.date_to = max(dates) if dates else False
             rec.span_days = (max(dates) - min(dates)).days if dates else 0
+            first = rec.date_from
+            rec.budget_year = (first.year + 543 + (1 if first.month >= 10 else 0)) if first else 0
 
     @api.depends("contract_ids.amount", "contract_ids.name", "contract_ids.near_threshold",
                  "total_amount", "threshold", "agency_name", "vendor_tin")
@@ -138,7 +149,7 @@ class SoiMaiContractGroup(models.Model):
     def create(self, vals_list):
         for vals in vals_list:
             if vals.get("name", "New") == "New":
-                vals["name"] = self.env["ir.sequence"].next_by_code("soi.mai.contract.group") or "New"
+                vals["name"] = self.env["ir.sequence"].next_by_code("justifile.contract.group") or "New"
         return super().create(vals_list)
 
     # ------------------------------------------------------------------ actions
@@ -148,7 +159,7 @@ class SoiMaiContractGroup(models.Model):
             raise AccessError(self.env._("You are not allowed to perform this step."))
 
     def action_submit_justification(self):
-        self._check_role("soi_mai.group_soi_mai_officer")
+        self._check_role("justifile.group_justifile_officer")
         for rec in self:
             if rec.state not in ("requested", "referred"):
                 raise UserError(self.env._("A justification has already been submitted."))
@@ -165,7 +176,7 @@ class SoiMaiContractGroup(models.Model):
         """Attach supporting documents (list of {"name", "data"} with base64 data).
         They show up in the chatter of the group for the auditor."""
         self.ensure_one()
-        self._check_role("soi_mai.group_soi_mai_officer")
+        self._check_role("justifile.group_justifile_officer")
         if self.state not in ("requested", "referred"):
             raise UserError(self.env._("Documents can only be added before the justification is submitted."))
         if not isinstance(files, list) or len(files) > EVIDENCE_MAX_FILES:
@@ -196,7 +207,7 @@ class SoiMaiContractGroup(models.Model):
         )
 
     def _review(self, state):
-        self._check_role("soi_mai.group_soi_mai_auditor")
+        self._check_role("justifile.group_justifile_auditor")
         for rec in self:
             if rec.state != "submitted":
                 raise UserError(self.env._("Only submitted justifications can be reviewed."))
@@ -211,6 +222,10 @@ class SoiMaiContractGroup(models.Model):
         return self._review("documented")
 
     def action_refer(self):
+        for rec in self:
+            if not (rec.review_note or "").strip():
+                raise UserError(self.env._(
+                    "Please write a reviewer note first, explaining what is still needed."))
         return self._review("referred")
 
     # ----------------------------------------------------------------- grouping
@@ -221,7 +236,7 @@ class SoiMaiContractGroup(models.Model):
         group that asks for a justification. Returns the groups created/extended."""
         params = self._get_params()
         threshold, window = params["threshold"], timedelta(days=params["window_days"])
-        Contract = self.env["soi.mai.contract"].sudo()
+        Contract = self.env["justifile.contract"].sudo()
         Group = self.sudo()
 
         domain = [
@@ -240,10 +255,9 @@ class SoiMaiContractGroup(models.Model):
 
         touched = Group
         for (agency, tin), contracts in buckets.items():
-            # 1) extend groups that are still waiting for a justification
-            open_groups = Group.search([
-                ("agency_name", "=", agency), ("vendor_tin", "=", tin), ("state", "=", "requested"),
-            ])
+            # 1) a new contract next to an existing group joins it; if that group was
+            #    already justified, the justification has to be brought up to date
+            open_groups = Group.search([("agency_name", "=", agency), ("vendor_tin", "=", tin)])
             for group in open_groups:
                 if not group.date_from:
                     continue
@@ -254,6 +268,10 @@ class SoiMaiContractGroup(models.Model):
                     joiners.write({"group_id": group.id})
                     contracts -= joiners
                     touched |= group
+                    if group.state in ("submitted", "documented"):
+                        group.write({"state": "requested"})
+                        group.message_post(body=self.env._(
+                            "A new related contract was added, so the justification needs to be updated."))
 
             # 2) look for new groups among what is left
             rest = contracts.sorted(lambda c: (c.contract_date, c.id))
@@ -303,7 +321,7 @@ class SoiMaiContractGroup(models.Model):
         direct = any(k in (method_name or "").lower() for k in ("เฉพาะเจาะจง", "specific", "direct"))
         if not (vendor_tin and contract_date and direct):
             return result
-        related = self.env["soi.mai.contract"].sudo().search([
+        related = self.env["justifile.contract"].sudo().search([
             ("agency_name", "=", agency_name), ("vendor_tin", "=", vendor_tin),
             ("is_direct", "=", True), ("amount", "<=", params["threshold"]),
             ("contract_date", ">=", contract_date - window),
@@ -336,6 +354,7 @@ class SoiMaiContractGroup(models.Model):
             "priority": self.doc_priority, "checks": checks,
             "reason_category": self.reason_category or "",
             "justification": self.justification or "",
+            "reference_doc": self.reference_doc or "",
             "review_note": self.review_note or "",
             "attachments": [{"id": a.id, "name": a.name} for a in self._evidence()],
         }
@@ -345,43 +364,65 @@ class SoiMaiContractGroup(models.Model):
 
     # ---------------------------------------------------------------- dashboard
     @api.model
-    def get_dashboard_data(self):
-        """Numbers for the one-page Management Dashboard."""
-        Contract = self.env["soi.mai.contract"]
+    def _dashboard_kpis(self, year=None):
+        """KPI numbers, for one budget year or for all years (year=None)."""
+        Contract = self.env["justifile.contract"]
+        cdom = [("budget_year", "=", year)] if year else []
+        gdom = [("budget_year", "=", year)] if year else []
+        by_state = {state: count for state, count in self._read_group(gdom, ["state"], ["__count"])}
+        total_groups = sum(by_state.values())
+        documented = by_state.get("documented", 0)
+        submitted = self._read_group(gdom + [("justified_date", "!=", False)], [], ["days_to_submit:avg", "__count"])[0]
+        total_contracts, total_amount = Contract._read_group(cdom, [], ["__count", "amount:sum"])[0]
+        direct_count, direct_amount = Contract._read_group(cdom + [("is_direct", "=", True)], [], ["__count", "amount:sum"])[0]
+        return {
+            "completeness_rate": round(100 * documented / total_groups, 1) if total_groups else None,
+            "documented": documented,
+            "total_groups": total_groups,
+            "waiting": by_state.get("requested", 0) + by_state.get("referred", 0),
+            "to_review": by_state.get("submitted", 0),
+            "high_priority_open": self.search_count(
+                gdom + [("state", "in", ("requested", "referred")), ("doc_priority", "=", "high")]),
+            "avg_days_to_submit": round(submitted[0] or 0, 1) if submitted[1] else None,
+            "direct_share": round(100 * direct_count / total_contracts, 1) if total_contracts else None,
+            "direct_count": direct_count,
+            "direct_amount": direct_amount or 0,
+            "total_contracts": total_contracts,
+            "total_amount": total_amount or 0,
+            "near_threshold": Contract.search_count(cdom + [("near_threshold", "=", True), ("is_direct", "=", True)]),
+        }
+
+    @api.model
+    def get_dashboard_data(self, year=None):
+        """Numbers for the one-page Management Dashboard.
+        year: Thai budget year (B.E.) to show, or None for all years. With a year, the
+        previous year's KPIs are included for comparison."""
+        Contract = self.env["justifile.contract"]
+        params = self._get_params()
+        year = int(year) if year else None
+        gdom = [("budget_year", "=", year)] if year else []
         state_labels = dict(self._fields["state"].selection)
         reason_labels = dict(self._fields["reason_category"].selection)
 
-        by_state = {state: count for state, count in self._read_group([], ["state"], ["__count"])}
-        total_groups = sum(by_state.values())
-        documented = by_state.get("documented", 0)
-        waiting = by_state.get("requested", 0) + by_state.get("referred", 0)
-
-        submitted = self._read_group([("justified_date", "!=", False)], [], ["days_to_submit:avg", "__count"])[0]
-        total_contracts, total_amount = Contract._read_group([], [], ["__count", "amount:sum"])[0]
-        direct_count, direct_amount = Contract._read_group([("is_direct", "=", True)], [], ["__count", "amount:sum"])[0]
-        near_count = Contract.search_count([("near_threshold", "=", True), ("is_direct", "=", True)])
-
-        reasons = self._read_group([("reason_category", "!=", False)], ["reason_category"], ["__count"])
+        years = sorted({y for (y,) in Contract._read_group([("budget_year", "!=", 0)], ["budget_year"]) if y},
+                       reverse=True)
+        by_state = {state: count for state, count in self._read_group(gdom, ["state"], ["__count"])}
+        reasons = self._read_group(gdom + [("reason_category", "!=", False)], ["reason_category"], ["__count"])
         open_by_agency = self._read_group(
-            [("state", "in", ("requested", "referred"))], ["agency_name"], ["__count", "total_amount:sum"],
+            gdom + [("state", "in", ("requested", "referred"))], ["agency_name"], ["__count", "total_amount:sum"],
+        )
+        previous = year - 1 if year and (year - 1) in years else None
+        by_year = Contract._read_group([("budget_year", "!=", 0)], ["budget_year"], ["__count", "amount:sum"])
+        direct_by_year = dict(
+            (y, (c, a)) for y, c, a in Contract._read_group(
+                [("budget_year", "!=", 0), ("is_direct", "=", True)], ["budget_year"], ["__count", "amount:sum"])
         )
         return {
-            "kpis": {
-                "completeness_rate": round(100 * documented / total_groups, 1) if total_groups else None,
-                "documented": documented,
-                "total_groups": total_groups,
-                "waiting": waiting,
-                "to_review": by_state.get("submitted", 0),
-                "high_priority_open": self.search_count(
-                    [("state", "in", ("requested", "referred")), ("doc_priority", "=", "high")]),
-                "avg_days_to_submit": round(submitted[0] or 0, 1) if submitted[1] else None,
-                "direct_share": round(100 * direct_count / total_contracts, 1) if total_contracts else None,
-                "direct_count": direct_count,
-                "direct_amount": direct_amount or 0,
-                "total_contracts": total_contracts,
-                "total_amount": total_amount or 0,
-                "near_threshold": near_count,
-            },
+            "year": year,
+            "years": years,
+            "previous_year": previous,
+            "kpis": self._dashboard_kpis(year),
+            "previous_kpis": self._dashboard_kpis(previous) if previous else None,
             "by_state": [
                 {"key": key, "label": label, "count": by_state.get(key, 0)} for key, label in state_labels.items()
             ],
@@ -393,5 +434,33 @@ class SoiMaiContractGroup(models.Model):
                 [{"agency": agency, "count": count, "amount": amount or 0} for agency, count, amount in open_by_agency],
                 key=lambda r: -r["count"],
             )[:5],
-            "params": self._get_params(),
+            "by_year": sorted([{
+                "year": y, "count": c, "amount": a or 0,
+                "direct_count": direct_by_year.get(y, (0, 0))[0],
+                "direct_share": round(100 * direct_by_year.get(y, (0, 0))[0] / c, 1) if c else None,
+            } for y, c, a in by_year if y], key=lambda r: r["year"]),
+            "amount_bands": self._amount_bands(params["threshold"], year=year),
+            "params": params,
         }
+
+    @api.model
+    def _amount_bands(self, threshold, bands_below=10, year=None):
+        """Number of contracts per amount band, from 0 to twice the bidding threshold.
+        A band covers (low, high], so a contract of exactly the threshold counts as below it."""
+        Contract = self.env["justifile.contract"]
+        Contract.check_access("read")
+        Contract.flush_model(["amount"])
+        width = threshold / bands_below
+        Contract.flush_model(["budget_year"])
+        query = ("SELECT (ceil(amount / %s) - 1)::int, count(*) FROM justifile_contract "
+                 "WHERE amount > 0 AND amount <= %s")
+        args = [width, threshold * 2]
+        if year:
+            query += " AND budget_year = %s"
+            args.append(int(year))
+        self.env.cr.execute(query + " GROUP BY 1", args)
+        counts = dict(self.env.cr.fetchall())
+        return [{
+            "index": i, "low": i * width, "high": (i + 1) * width, "count": counts.get(i, 0),
+            "just_below": i == bands_below - 1,
+        } for i in range(bands_below * 2)]

@@ -1,37 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo noupdate="1">
     <record id="seq_contract_group" model="ir.sequence">
-        <field name="name">Soi Mai related contracts group</field>
-        <field name="code">soi.mai.contract.group</field>
+        <field name="name">JustiFile related contracts group</field>
+        <field name="code">justifile.contract.group</field>
         <field name="prefix">RCG-</field>
         <field name="padding">5</field>
     </record>
 
     <!-- Rules: change them in Settings > Technical > System Parameters -->
     <record id="param_threshold" model="ir.config_parameter">
-        <field name="key">soi_mai.threshold</field>
+        <field name="key">justifile.threshold</field>
         <field name="value">500000</field>
     </record>
     <record id="param_window_days" model="ir.config_parameter">
-        <field name="key">soi_mai.window_days</field>
+        <field name="key">justifile.window_days</field>
         <field name="value">30</field>
     </record>
     <record id="param_near_ratio" model="ir.config_parameter">
-        <field name="key">soi_mai.near_ratio</field>
+        <field name="key">justifile.near_ratio</field>
         <field name="value">0.9</field>
     </record>
 
     <record id="cron_run_grouping" model="ir.cron">
-        <field name="name">Soi Mai: check related contracts</field>
-        <field name="model_id" ref="model_soi_mai_contract_group"/>
+        <field name="name">JustiFile: check related contracts</field>
+        <field name="model_id" ref="model_justifile_contract_group"/>
         <field name="state">code</field>
         <field name="code">model.run_grouping()</field>
         <field name="interval_number">1</field>
         <field name="interval_type">days</field>
     </record>
     <record id="cron_cgd_import" model="ir.cron">
-        <field name="name">Soi Mai: import contracts from CGD open data</field>
-        <field name="model_id" ref="model_soi_mai_cgd_import"/>
+        <field name="name">JustiFile: import contracts from CGD open data</field>
+        <field name="model_id" ref="model_justifile_cgd_import"/>
         <field name="state">code</field>
         <field name="code">model.cron_import()</field>
         <field name="interval_number">1</field>
